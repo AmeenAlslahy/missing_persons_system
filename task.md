@@ -1,0 +1,44 @@
+# Task Checklist
+
+- [x] Fix MediaPipe Dependency
+    - [x] Reinstall MediaPipe
+    - [x] Fix local imports in `ai_engine.py`
+    - [x] Add fallback for face detection failure
+- [x] Fix Database Schema
+    - [x] Drop zombie columns (`address`, `successful_reports_count`)
+- [x] Clear Old Data
+    - [x] Create and run `clear_data.py`
+- [x] Verify Matching Flow
+    - [x] Check `matching/signals.py`
+    - [x] Check `matching/matcher.py`
+    - [x] Confirm `FaceEngine` behavior with full image fallback
+- [x] Validation: Enforce Face Detection
+    - [x] Implement validation in `reports/serializers.py`
+    - [x] Ensure `FaceEngine` is called during upload
+    - [x] Clean up permissive signal logic
+- [x] Debug: Fix Report Acceptance
+    - [x] Investigate `#confirm-report-btn` in `reports.html`
+    - [x] Verify `review` action in `reports/views.py`
+- [x] Feature: Immediate Matching Feedback
+    - [x] Update `ReportViewSet.create` to check for matches
+    - [x] Update frontend to show match alert
+- [x] Optimization: Fix System Slowness
+    - [x] Prevent double matching execution in `signals.py`
+    - [x] Fix N+1 query problem in `ReportMatcher` using `prefetch_related`
+    - [x] Optimize embedding retrieval in `match_single_pair`
+- [x] Run Project
+    - [x] Install dependencies (`cryptography`)
+    - [x] Fix `django-cryptography` compatibility (Implemented custom `EncryptedCharField`)
+    - [x] Run Migrations
+    - [x] Start Server (`python manage.py runserver`)
+
+## Dashboard Enhancements
+- [x] Review Admin Dashboard Logic
+    - [x] Update `AnalyticsService` to use real data (removed dummy static values)
+    - [x] Expose `reviewed_by` in `MatchResultSerializer`
+    - [x] Update `matching.html` to show reviewer details in modal
+    - [x] Fix Analytics Discrepancy (Active Reports count mismatch)
+    - [x] Relax API Throttling limits for dashboard polling
+- [x] Fix circular imports in `matching/models.py`
+- [x] Add encryption to `accounts/models.py`
+- [x] Add missing fields to `reports/models.py`

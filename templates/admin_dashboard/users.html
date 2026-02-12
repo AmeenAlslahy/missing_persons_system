@@ -1,0 +1,263 @@
+{% extends 'admin_dashboard/base_dashboard.html' %}
+
+{% block title %}إدارة المستخدمين | لوحة التحكم{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">إدارة المستخدمين</h4>
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{% url 'admin_dashboard:index' %}">الرئيسية</a></li>
+            <li class="breadcrumb-item active">المستخدمين</li>
+        </ol>
+    </nav>
+</div>
+
+<div class="card stat-card mb-4">
+    <div class="card-body">
+        <form id="filter-form" class="row g-3">
+            <div class="col-md-4">
+                <input type="text" name="search" class="form-control" placeholder="بحث بالاسم، الإيميل أو الهاتف...">
+            </div>
+            <div class="col-md-2">
+                <select name="user_role" class="form-select">
+                    <option value="">كل الأدوار</option>
+                    <option value="user">مستخدم عادي</option>
+                    <option value="volunteer">متطوع</option>
+                    <option value="admin">مشرف</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="verification_status" class="form-select">
+                    <option value="">حالة التوثيق</option>
+                    <option value="pending">قيد الانتظار</option>
+                    <option value="verified">موثق</option>
+                    <option value="rejected">مرفوض</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="is_blocked" class="form-select">
+                    <option value="">حالة الحظر</option>
+                    <option value="false">نشط</option>
+                    <option value="true">محظور</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">تصفية</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card stat-card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="bg-light">
+                <tr>
+                    <th>المستخدم</th>
+                    <th>الهاتف</th>
+                    <th>السكن</th>
+                    <th>الدور</th>
+                    <th>التوثيق</th>
+                    <th>الحظر</th>
+                    <th>الإجراءات</th>
+                </tr>
+            </thead>
+            <tbody id="users-table-body">
+                <!-- Data will be loaded via AJAX -->
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer bg-white border-0 d-flex justify-content-between align-items-center">
+        <div id="table-info" class="small text-muted"></div>
+        <nav id="pagination-nav">
+            <ul class="pagination pagination-sm mb-0"></ul>
+        </nav>
+    </div>
+</div>
+
+<!-- Modal for User Actions -->
+<div class="modal fade" id="userActionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title fw-bold" id="actionModalTitle">إجراء إداري</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="user-action-form">
+                    <input type="hidden" id="target-user-id">
+                    <input type="hidden" id="target-action">
+
+                    <div id="role-selector-div" class="mb-3 d-none">
+                        <label class="form-label fw-bold">اختر الدور الجديد</label>
+                        <select class="form-select" id="new-user-role">
+                            <option value="user">مستخدم عادي</option>
+                            <option value="volunteer">متطوع</option>
+                            <option value="admin">مشرف</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold" id="reason-label">السبب / ملاحظات (اختياري)</label>
+                        <textarea class="form-control" id="action-reason" rows="3"
+                            placeholder="اكتب السبب هنا..."></textarea>
+                    </div>
+
+                    <div id="trust-info-div" class="alert alert-info d-none">
+                        <i class="fas fa-info-circle me-1"></i> سيتم إعادة حساب درجة الثقة بناءً على إجمالي البلاغات
+                        ونسبة الحلول.
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer bg-light border-0">
+                <button type="button" class="btn btn-secondary px-4" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-primary px-4 fw-bold" id="confirm-action-btn">تنفيذ
+                    الإجراء</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        let currentPage = 1;
+
+        function loadUsers(page = 1) {
+            let formData = $('#filter-form').serialize();
+            $.ajax({
+                url: `/api/accounts/users/?page=${page}&${formData}`,
+                method: 'GET',
+                success: function (response) {
+                    renderTable(response.results);
+                    renderPagination(response);
+                    $('#table-info').text(`عرض ${response.results.length} من إجمالي ${response.count} مستخدم`);
+                }
+            });
+        }
+
+        function renderTable(users) {
+            let html = '';
+            users.forEach(user => {
+                const roles = {
+                    'user': { label: 'مستخدم', class: 'bg-soft-secondary text-secondary' },
+                    'volunteer': { label: 'متطوع', class: 'bg-soft-info text-info' },
+                    'admin': { label: 'مشرف', class: 'bg-soft-danger text-danger' },
+                    'super_admin': { label: 'مشرف رئيسي', class: 'bg-danger' }
+                };
+                const userRole = roles[user.user_role] || roles['user'];
+
+                let verifyClass = user.verification_status === 'verified' ? 'bg-success' : (user.verification_status === 'pending' ? 'bg-warning' : 'bg-danger');
+                let blockBadge = user.is_blocked ? '<span class="badge bg-danger rounded-pill">محظور</span>' : '<span class="badge bg-success rounded-pill">نشط</span>';
+
+                // Trust Score Badge
+                let trustBadge = 'bg-secondary';
+                if (user.trust_score > 80) trustBadge = 'bg-success';
+                else if (user.trust_score > 50) trustBadge = 'bg-primary';
+                else if (user.trust_score > 20) trustBadge = 'bg-warning';
+                else if (user.total_reports > 5) trustBadge = 'bg-danger';
+
+                html += `
+                <tr>
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <div class="position-relative">
+                                <img src="${user.profile_picture || 'https://ui-avatars.com/api/?name=' + user.full_name}" class="rounded-circle border" width="40" height="40">
+                                <span class="position-absolute bottom-0 end-0 p-1 bg-success border border-light rounded-circle" style="width: 10px; height: 10px;"></span>
+                            </div>
+                            <div class="ms-3">
+                                <div class="fw-bold">${user.full_name}</div>
+                                <div class="text-muted small">${user.email}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td><div class="small">${user.phone || '---'}</div></td>
+                    <td><span class="badge ${userRole.class}">${userRole.label}</span></td>
+                    <td><span class="badge ${verifyClass}">${user.verification_status === 'verified' ? 'موثق' : (user.verification_status === 'pending' ? 'قيد الانتظار' : 'مرفوض')}</span></td>
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge ${trustBadge}">${user.trust_score.toFixed(1)}%</span>
+                            <div class="small text-muted">(${user.resolved_reports}/${user.total_reports})</div>
+                        </div>
+                    </td>
+                    <td>${blockBadge}</td>
+                    <td>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-light border dropdown-toggle" type="button" data-bs-toggle="dropdown"><i class="fas fa-cog"></i></button>
+                            <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0">
+                                ${user.verification_status === 'pending' ? `<li><a class="dropdown-item" href="#" onclick="openActionModal(${user.id}, 'verify', 'توثيق الحساب')"><i class="fas fa-check-circle text-success me-2"></i>توثيق</a></li>` : ''}
+                                <li><a class="dropdown-item" href="#" onclick="openActionModal(${user.id}, 'change_role', 'تغيير دور المستخدم', '${user.user_role}')"><i class="fas fa-user-tag me-2"></i>تغيير الدور</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="openActionModal(${user.id}, 'recalculate_trust', 'إعادة حساب الثقة')"><i class="fas fa-sync-alt me-2"></i>تحديث الثقة</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                ${user.is_blocked ?
+                        `<li><a class="dropdown-item text-success" href="#" onclick="openActionModal(${user.id}, 'unblock', 'رفع الحظر')"><i class="fas fa-user-check me-2"></i>رفع الحظر</a></li>` :
+                        `<li><a class="dropdown-item text-danger" href="#" onclick="openActionModal(${user.id}, 'block', 'حظر المستخدم')"><i class="fas fa-user-slash me-2"></i>حظر</a></li>`
+                    }
+                            </ul>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            });
+            $('#users-table-body').html(html || '<tr><td colspan="7" class="text-center py-4">لا يوجد مستخدمين مطابقين</td></tr>');
+        }
+
+        window.openActionModal = function (userId, action, title, currentRole = '') {
+            $('#target-user-id').val(userId);
+            $('#target-action').val(action);
+            $('#actionModalTitle').text(title);
+            $('#action-reason').val('');
+
+            // Toggle UI based on action
+            $('#role-selector-div').addClass('d-none');
+            $('#trust-info-div').addClass('d-none');
+
+            if (action === 'change_role') {
+                $('#role-selector-div').removeClass('d-none');
+                $('#new-user-role').val(currentRole);
+            } else if (action === 'recalculate_trust') {
+                $('#trust-info-div').removeClass('d-none');
+            }
+
+            $('#userActionModal').modal('show');
+        };
+
+        $('#confirm-action-btn').on('click', function () {
+            let userId = $('#target-user-id').val();
+            let action = $('#target-action').val();
+            let reason = $('#action-reason').val();
+            let newRole = $('#new-user-role').val();
+
+            $.ajax({
+                url: `/api/accounts/users/${userId}/admin_action/`,
+                method: 'POST',
+                data: JSON.stringify({
+                    action: action,
+                    reason: reason,
+                    new_role: (action === 'change_role' ? newRole : '')
+                }),
+                contentType: 'application/json',
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+                success: function (response) {
+                    $('#userActionModal').modal('hide');
+                    loadUsers(currentPage);
+                    alert(response.message);
+                },
+                error: function (xhr) {
+                    alert('حدث خطأ: ' + (xhr.responseJSON ? xhr.responseJSON.detail : 'خطأ غير معروف'));
+                }
+            });
+        });
+
+        $('#filter-form').on('submit', function (e) {
+            e.preventDefault();
+            currentPage = 1;
+            loadUsers();
+        });
+
+        loadUsers();
+    });
+</script>
+{% endblock %}

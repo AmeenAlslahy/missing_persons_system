@@ -1,0 +1,232 @@
+{% extends 'admin_dashboard/base_dashboard.html' %}
+
+{% block title %}بث الإشعارات | لوحة التحكم{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">بث الإشعارات والطوارئ</h4>
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{% url 'admin_dashboard:index' %}">الرئيسية</a></li>
+            <li class="breadcrumb-item active">بث الإشعارات</li>
+        </ol>
+    </nav>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-5">
+        <div class="card stat-card h-100">
+            <div class="card-header bg-white py-3 border-0">
+                <h6 class="mb-0 fw-bold underline-title">إرسال تنبيه جديد</h6>
+            </div>
+            <div class="card-body">
+                <form id="broadcast-form">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">نوع التنبيه</label>
+                        <select name="notification_type" class="form-select" id="n-type">
+                            <option value="urgent_alert">تنبيه طوارئ عاجل</option>
+                            <option value="system_update">تحديث نظام وقوانين</option>
+                            <option value="message_from_admin">رسالة إدارية عامة</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">مستوى الأولوية</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="priority_level" value="urgent"
+                                    id="p-urgent" checked>
+                                <label class="form-check-label text-danger fw-bold" for="p-urgent">عاجل جداً</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="priority_level" value="high"
+                                    id="p-high">
+                                <label class="form-check-label text-warning" for="p-high">مهم</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="priority_level" value="normal"
+                                    id="p-normal">
+                                <label class="form-check-label" for="p-normal">عادي</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">عنوان الإشعار</label>
+                        <input type="text" name="title" class="form-control"
+                            placeholder="أدخل عنواناً جذاباً وقصيراً..." required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">نص الرسالة</label>
+                        <textarea name="message" class="form-control" rows="4" placeholder="اكتب تفاصيل الإشعار هنا..."
+                            required></textarea>
+                    </div>
+                    <div class="collapse" id="extra-options">
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">رابط الإجراء (Action URL)</label>
+                            <input type="url" name="action_url" class="form-control" placeholder="https://...">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">نص الزر</label>
+                            <input type="text" name="action_text" class="form-control"
+                                placeholder="مثلاً: عرض التفاصيل">
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-4">
+                        <button type="button" class="btn btn-link btn-sm text-decoration-none" data-bs-toggle="collapse"
+                            data-bs-target="#extra-options">
+                            خيارات إضافية <i class="fas fa-chevron-down ms-1"></i>
+                        </button>
+                        <button type="submit" class="btn btn-danger px-4 fw-bold shadow-sm">
+                            <i class="fas fa-paper-plane me-2"></i> بث الإشعار للجميع
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card stat-card h-100">
+            <div class="card-header bg-white py-3 border-0 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-bold">سجل التنبيهات الأخيرة</h6>
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadHistory()">تحديث</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle small">
+                    <thead class="bg-light">
+                        <tr>
+                            <th>العنوان</th>
+                            <th>النوع</th>
+                            <th>الأولوية</th>
+                            <th>التاريخ</th>
+                            <th>الحالة</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-table-body">
+                        <!-- Data via AJAX -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-4">
+        <div class="card stat-card bg-soft-primary border-0">
+            <div class="card-body d-flex align-items-center">
+                <div class="stat-icon bg-primary text-white mb-0 me-3">
+                    <i class="fas fa-bullhorn"></i>
+                </div>
+                <div>
+                    <h6 class="text-muted small mb-1">إجمالي التنبيهات المرسلة</h6>
+                    <h4 class="mb-0" id="stat-total">0</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card bg-soft-success border-0">
+            <div class="card-body d-flex align-items-center">
+                <div class="stat-icon bg-success text-white mb-0 me-3">
+                    <i class="fas fa-envelope-open"></i>
+                </div>
+                <div>
+                    <h6 class="text-muted small mb-1">نسبة القراءة</h6>
+                    <h4 class="mb-0" id="stat-read">0%</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card bg-soft-danger border-0">
+            <div class="card-body d-flex align-items-center">
+                <div class="stat-icon bg-danger text-white mb-0 me-3">
+                    <i class="fas fa-exclamation-circle"></i>
+                </div>
+                <div>
+                    <h6 class="text-muted small mb-1">تنبيهات عاجلة نشطة</h6>
+                    <h4 class="mb-0" id="stat-urgent">0</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        function loadHistory() {
+            $.get('/api/notifications/admin/notifications/', function (res) {
+                renderHistory(res.results);
+            });
+
+            $.get('/api/notifications/admin/notifications/stats/', function (res) {
+                $('#stat-total').text(res.total_notifications);
+                $('#stat-urgent').text(res.urgent_notifications);
+                const readPercent = res.total_notifications > 0 ? ((res.total_notifications - res.unread_notifications) / res.total_notifications * 100).toFixed(1) : 0;
+                $('#stat-read').text(readPercent + '%');
+            });
+        }
+
+        function renderHistory(data) {
+            let html = '';
+            const seen = new Set(); // منع التكرار
+            data.forEach(item => {
+                // تخطي الإشعارات المكررة
+                if (seen.has(item.notification_id)) return;
+                seen.add(item.notification_id);
+
+                const priorityClass = item.priority_level === 'urgent' ? 'bg-danger' : (item.priority_level === 'high' ? 'bg-warning' : 'bg-primary');
+                html += `
+                <tr data-notification-id="${item.notification_id}">
+                    <td>
+                        <div class="fw-bold">${item.title}</div>
+                        <div class="text-muted text-truncate" style="max-width: 200px;">${item.message}</div>
+                    </td>
+                    <td><small>${item.notification_type}</small></td>
+                    <td><span class="badge ${priorityClass}">${item.priority_level}</span></td>
+                    <td>${new Date(item.created_at).toLocaleDateString('ar-SA')}</td>
+                    <td><i class="fas ${item.is_read ? 'fa-check-double text-success' : 'fa-check text-muted'}"></i></td>
+                </tr>
+                `;
+            });
+            $('#history-table-body').html(html || '<tr><td colspan="5" class="text-center py-4">لا توجد تنبيهات سابقة</td></tr>');
+        }
+
+        $('#broadcast-form').on('submit', function (e) {
+            e.preventDefault();
+            const formData = {
+                notification_type: $('#n-type').val(),
+                priority_level: $('input[name="priority_level"]:checked').val(),
+                title: $('input[name="title"]').val(),
+                message: $('textarea[name="message"]').val(),
+                action_required: $('input[name="action_url"]').val() !== '',
+                action_url: $('input[name="action_url"]').val(),
+                action_text: $('input[name="action_text"]').val(),
+                expiry_days: 7
+            };
+
+            if (!confirm('هل أنت متأكد من بث هذا الإشعار لجميع المستخدمين؟')) return;
+
+            $.ajax({
+                url: '/api/notifications/admin/notifications/',
+                method: 'POST',
+                data: JSON.stringify(formData),
+                contentType: 'application/json',
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+                success: function (res) {
+                    alert('تم بث الإشعار بنجاح لـ ' + res.count + ' مستخدم');
+                    $('#broadcast-form')[0].reset();
+                    loadHistory();
+                },
+                error: function (xhr) {
+                    alert('خطأ في الإرسال: ' + (xhr.responseJSON?.message || 'خطأ غير معروف'));
+                }
+            });
+        });
+
+        loadHistory();
+    });
+</script>
+{% endblock %}

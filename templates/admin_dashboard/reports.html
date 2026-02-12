@@ -1,0 +1,633 @@
+{% extends 'admin_dashboard/base_dashboard.html' %}
+
+{% block title %}إدارة البلاغات | لوحة التحكم{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex align-items-center gap-2">
+        <button class="btn btn-success shadow-sm" data-bs-toggle="modal" data-bs-target="#createReportModal">
+            <i class="fas fa-plus me-1"></i> إنشاء بلاغ جديد
+        </button>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="{% url 'admin_dashboard:index' %}">الرئيسية</a></li>
+                <li class="breadcrumb-item active">البلاغات</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="card stat-card mb-4">
+    <div class="card-body">
+        <form id="filter-form" class="row g-3">
+            <div class="col-md-2">
+                <input type="text" name="search" class="form-control" placeholder="البحث بالاسم أو الكود...">
+            </div>
+            <div class="col-md-2">
+                <select name="report_type" class="form-select">
+                    <option value="">كل الأنواع</option>
+                    <option value="missing">مفقود</option>
+                    <option value="found">معثور عليه</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="status" class="form-select">
+                    <option value="">كل الحالات</option>
+                    <option value="active">نشط</option>
+                    <option value="pending">قيد المراجعة</option>
+                    <option value="resolved">تم الحل</option>
+                    <option value="closed">مغلق</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <select name="importance_level" class="form-select">
+                    <option value="">الأهمية</option>
+                    <option value="high">مرتفع</option>
+                    <option value="medium">متوسط</option>
+                    <option value="low">منخفض</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="gender" class="form-select">
+                    <option value="">الجنس</option>
+                    <option value="M">ذكر</option>
+                    <option value="F">أنثى</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <input type="number" name="min_age" class="form-control" placeholder="أصغر عمر">
+            </div>
+            <div class="col-md-1">
+                <input type="number" name="max_age" class="form-control" placeholder="أكبر عمر">
+            </div>
+            <div class="col-md-2">
+                <input type="text" name="health_condition" class="form-control" placeholder="الحالة الصحية...">
+            </div>
+            <div class="col-md-2">
+                <select name="city" class="form-select" id="city-filter">
+                    <option value="">كل المدن</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="ordering" class="form-select">
+                    <option value="-created_at">الأحدث أولاً</option>
+                    <option value="-importance_level">حسب الأهمية</option>
+                    <option value="age">العمر (تصاعدي)</option>
+                    <option value="-age">العمر (تنازلي)</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter"></i></button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row" id="reports-container">
+    <!-- Reports will be loaded here as cards or list items -->
+</div>
+
+<div class="d-flex justify-content-center mt-4" id="pagination-container">
+    <!-- Pagination buttons -->
+</div>
+
+<!-- Modal for Creating New Report -->
+<div class="modal fade" id="createReportModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">إنشاء بلاغ جديد (بصلاحية مشرف)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="create-report-form" enctype="multipart/form-data">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">نوع البلاغ</label>
+                            <select name="report_type" class="form-select" required>
+                                <option value="missing">مفقود</option>
+                                <option value="found">معثور عليه</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">اسم الشخص الكامل</label>
+                            <input type="text" name="person_name" class="form-control" required>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">العمر (تقريبي)</label>
+                            <input type="number" name="age" class="form-control" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">الجنس</label>
+                            <select name="gender" class="form-select" required>
+                                <option value="M">ذكر</option>
+                                <option value="F">أنثى</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">الجنسية</label>
+                            <input type="text" name="nationality" class="form-control" value="يمني">
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label">المحافظة / المدينة</label>
+                            <input type="text" name="city" class="form-control" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">المديرية</label>
+                            <input type="text" name="district" class="form-control" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">تاريخ المفقود/المعثور عليه</label>
+                            <input type="date" name="last_seen_date" class="form-control" required>
+                        </div>
+
+                        <div class="col-12">
+                            <h6 class="border-bottom pb-2 my-2 text-primary">المواصفات الجسدية</h6>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">الطول (سم)</label>
+                            <input type="number" name="height" class="form-control" step="0.1" min="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">الوزن (كجم)</label>
+                            <input type="number" name="weight" class="form-control" step="0.1" min="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">البنية الجسدية</label>
+                            <select name="body_build" class="form-select">
+                                <option value="">اختر...</option>
+                                <option value="slim">نحيف</option>
+                                <option value="average">متوسط</option>
+                                <option value="athletic">رياضي</option>
+                                <option value="heavy">ممتلئ</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">لون البشرة</label>
+                            <select name="skin_color" class="form-select">
+                                <option value="">اختر...</option>
+                                <option value="light">فاتح</option>
+                                <option value="fair">حنطي</option>
+                                <option value="medium">متوسط</option>
+                                <option value="olive">خمري</option>
+                                <option value="brown">أسمر</option>
+                                <option value="black">أسود</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">لون الشعر</label>
+                            <select name="hair_color" class="form-select">
+                                <option value="">اختر...</option>
+                                <option value="black">أسود</option>
+                                <option value="brown">بني</option>
+                                <option value="blonde">أشقر</option>
+                                <option value="red">أحمر</option>
+                                <option value="white">أبيض</option>
+                                <option value="grey">رمادي</option>
+                                <option value="bald">أصلع</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">نوع الشعر</label>
+                            <select name="hair_type" class="form-select">
+                                <option value="">اختر...</option>
+                                <option value="straight">ناعم</option>
+                                <option value="wavy">مموج</option>
+                                <option value="curly">مجعد</option>
+                                <option value="coily">خشن</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">لون العينين</label>
+                            <select name="eye_color" class="form-select">
+                                <option value="">اختر...</option>
+                                <option value="black">أسود</option>
+                                <option value="brown">بني</option>
+                                <option value="hazel">عسلي</option>
+                                <option value="green">أخضر</option>
+                                <option value="blue">أزرق</option>
+                                <option value="grey">رمادي</option>
+                            </select>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label">وصف الملابس</label>
+                            <textarea name="clothing_description" class="form-control" rows="2"
+                                placeholder="وصف الملابس التي كان يرتديها وقت الفقدان..."></textarea>
+                        </div>
+
+                        <div class="col-12">
+                            <h6 class="border-bottom pb-2 my-2 text-primary">معلومات الموقع والتواصل</h6>
+                            <input type="text" name="last_seen_location" class="form-control" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">اسم جهة التواصل</label>
+                            <input type="text" name="contact_person" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">رقم هاتف التواصل</label>
+                            <input type="text" name="contact_phone" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">صلة القرابة</label>
+                            <input type="text" name="contact_relationship" class="form-control"
+                                placeholder="مثال: أب، أم، أخ، صديق...">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">البريد الإلكتروني (اختياري)</label>
+                            <input type="email" name="contact_email" class="form-control">
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label">أوصاف إضافية (اختياري)</label>
+                            <textarea name="distinctive_features" class="form-control" rows="2"
+                                placeholder="أوصاف جسدية، ملابس، علامات مميزة..."></textarea>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label">الحالة الصحية (إلزامي)</label>
+                            <input type="text" name="health_condition" class="form-control" required
+                                placeholder="مثال: جيد، يعاني من مرض الزهايمر، إعاقة حركية...">
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label" id="photo-label">الصورة الأساسية (ضرورية للمطابقة) <span
+                                    class="text-danger">*</span></label>
+                            <input type="file" name="primary_photo" class="form-control" accept="image/*" required
+                                id="primary-photo-input">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-success" id="save-new-report-btn">إنشاء ونشر البلاغ</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for Report Details -->
+<div class="modal fade" id="reportDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content" id="report-details-content">
+            <!-- Loaded via AJAX -->
+        </div>
+    </div>
+</div>
+
+<!-- Modal for Re-action (Accept/Reject/Resolve) -->
+<div class="modal fade" id="reportActionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="reportActionTitle">مراجعة البلاغ</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="target-report-id">
+                <input type="hidden" id="target-report-action">
+
+                <div class="mb-3" id="rejection-reason-container">
+                    <label class="form-label">سبب الرفض</label>
+                    <textarea id="rejection-reason" class="form-control" rows="3"></textarea>
+                </div>
+
+                <div class="mb-3" id="close-reason-container">
+                    <label class="form-label">سبب الإغلاق (التوثيق)</label>
+                    <textarea id="close-reason" class="form-control" rows="3"
+                        placeholder="مثلاً: تم العثور عليه في المستشفى الجمهوي بصحة جيدة..."></textarea>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">ملاحظات إضافية</label>
+                    <textarea id="review-notes" class="form-control" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-primary" id="confirm-report-btn">تأكيد الإجراء</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        let currentPage = 1;
+
+        function loadReports(page = 1) {
+            currentPage = page;
+            let formData = $('#filter-form').serialize();
+            $.ajax({
+                url: `/api/reports/reports/?page=${page}&${formData}`,
+                method: 'GET',
+                success: function (response) {
+                    renderReports(response.results);
+                    renderPagination(response);
+                }
+            });
+        }
+
+        function renderReports(reports) {
+            let html = '';
+            reports.forEach(report => {
+                let statusBadge = '';
+                switch (report.status) {
+                    case 'pending': statusBadge = '<span class="badge bg-warning">قيد المراجعة</span>'; break;
+                    case 'active': statusBadge = '<span class="badge bg-success">نشط</span>'; break;
+                    case 'resolved': statusBadge = '<span class="badge bg-primary">تم الحل</span>'; break;
+                    case 'closed': statusBadge = '<span class="badge bg-secondary">مغلق</span>'; break;
+                    case 'rejected': statusBadge = '<span class="badge bg-danger">مرفوض</span>'; break;
+                }
+
+                html += `
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card stat-card h-100 border-top ${report.importance_level === 'high' ? 'border-danger border-4' : ''}">
+                        <div class="position-relative">
+                            <img src="${report.primary_photo || 'https://via.placeholder.com/400x300?text=No+Photo'}" class="card-img-top" style="height: 200px; object-fit: cover; border-radius: 12px 12px 0 0;">
+                            <div class="position-absolute top-0 start-0 m-2">
+                                ${statusBadge}
+                            </div>
+                            <div class="position-absolute top-0 end-0 m-2 d-flex flex-column gap-1 align-items-end">
+                                <span class="badge bg-dark">${report.report_type === 'missing' ? 'مفقود' : 'معثور عليه'}</span>
+                                ${report.importance_level === 'high' ? '<span class="badge bg-danger shadow-sm"><i class="fas fa-exclamation-triangle"></i> هام جداً</span>' : ''}
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <h5 class="card-title fw-bold">${report.person_name}</h5>
+                            <div class="text-muted small mb-2"><i class="fas fa-map-marker-alt me-1"></i> ${report.city}, ${report.district}</div>
+                            <div class="d-flex justify-content-between mb-3 small">
+                                <span><i class="far fa-calendar-alt me-1"></i> ${new Date(report.last_seen_date).toLocaleDateString('ar-SA')}</span>
+                                <span><i class="fas fa-fingerprint me-1"></i> ${report.report_code}</span>
+                            </div>
+                            <div class="d-grid gap-2">
+                                ${report.status === 'pending' ? `
+                                    <div class="btn-group">
+                                        <button class="btn btn-outline-success btn-sm" onclick="openReportModal(${report.id}, 'accept', '${report.person_name}')">قبول</button>
+                                        <button class="btn btn-outline-danger btn-sm" onclick="openReportModal(${report.id}, 'reject', '${report.person_name}')">رفض</button>
+                                    </div>
+                                ` : ''}
+                                <div class="d-flex gap-1">
+                                    <button class="btn btn-primary btn-sm flex-grow-1" onclick="viewReportDetails(${report.id})">عرض الإدارة</button>
+                                    ${report.importance_level !== 'high' && report.status === 'active' ? `
+                                        <button class="btn btn-outline-danger btn-sm" onclick="escalateReport(${report.id})" title="تصعيد"><i class="fas fa-bolt"></i></button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            });
+            $('#reports-container').html(html || '<div class="col-12 text-center py-5"><p class="text-muted">لا توجد بلاغات تطابق البحث</p></div>');
+        }
+
+        function renderPagination(response) {
+            let html = '';
+            if (response.previous) html += `<button class="btn btn-sm btn-light border mx-1" onclick="loadReports(${currentPage - 1})">السابق</button>`;
+            if (response.next) html += `<button class="btn btn-sm btn-light border mx-1" onclick="loadReports(${currentPage + 1})">التالي</button>`;
+            $('#pagination-container').html(html);
+        }
+
+        window.viewReportDetails = function (id) {
+            $.ajax({
+                url: `/api/reports/reports/${id}/`,
+                method: 'GET',
+                success: function (report) {
+                    let html = `
+                        <div class="modal-header bg-light">
+                            <h5 class="modal-title">إدارة بلاغ: ${report.person_name} (${report.report_code})</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <img src="${report.primary_photo || 'https://via.placeholder.com/400x500?text=No+Photo'}" class="img-fluid rounded shadow-sm mb-3">
+                                    <div class="card bg-light border-0">
+                                        <div class="card-body p-3">
+                                            <h6>بيانات الاتصال</h6>
+                                            <p class="mb-1 small"><strong>الاسم:</strong> ${report.contact_person}</p>
+                                            <p class="mb-1 small"><strong>الهاتف:</strong> ${report.contact_phone}</p>
+                                            <p class="mb-1 small"><strong>القرابة:</strong> ${report.contact_relationship || '---'}</p>
+                                            <p class="mb-0 small"><strong>البريد:</strong> ${report.contact_email || '---'}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-8">
+                                    <ul class="nav nav-tabs mb-3" id="reportTabs" role="tablist">
+                                        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#info">المعلومات</button></li>
+                                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#physical">المواصفات</button></li>
+                                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#desc">الأوصاف</button></li>
+                                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#actions">العمليات</button></li>
+                                    </ul>
+                                    <div class="tab-content">
+                                        <div class="tab-pane fade show active" id="info">
+                                            <div class="row g-3">
+                                                <div class="col-md-6 border-bottom pb-2"><strong>العمر:</strong> ${report.age} سنة</div>
+                                                <div class="col-md-6 border-bottom pb-2"><strong>الجنس:</strong> ${report.gender === 'M' ? 'ذكر' : 'أنثى'}</div>
+                                                <div class="col-md-6 border-bottom pb-2"><strong>الموقع:</strong> ${report.city}, ${report.district}</div>
+                                                <div class="col-md-6 border-bottom pb-2"><strong>التاريخ:</strong> ${report.last_seen_date}</div>
+                                                <div class="col-12"><p class="mt-2"><strong>الموقع التفصيلي:</strong> ${report.last_seen_location}</p></div>
+                                                <div class="col-12"><p><strong>الحالة الصحية:</strong> ${report.health_condition}</p></div>
+                                            </div>
+                                        </div>
+                                        <div class="tab-pane fade" id="physical">
+                                            <div class="row g-3">
+                                                <div class="col-md-4 border-bottom pb-2"><strong>الطول:</strong> ${report.height ? report.height + ' سم' : 'غير محدد'}</div>
+                                                <div class="col-md-4 border-bottom pb-2"><strong>الوزن:</strong> ${report.weight ? report.weight + ' كجم' : 'غير محدد'}</div>
+                                                <div class="col-md-4 border-bottom pb-2"><strong>البنية:</strong> ${report.body_build_display || 'غير محدد'}</div>
+                                                <div class="col-md-6 border-bottom pb-2"><strong>لون البشرة:</strong> ${report.skin_color_display || 'غير محدد'}</div>
+                                                <div class="col-md-6 border-bottom pb-2"><strong>لون الشعر:</strong> ${report.hair_color_display || 'غير محدد'}</div>
+                                                <div class="col-md-6 border-bottom pb-2"><strong>نوع الشعر:</strong> ${report.hair_type_display || 'غير محدد'}</div>
+                                                <div class="col-md-6 border-bottom pb-2"><strong>لون العينين:</strong> ${report.eye_color_display || 'غير محدد'}</div>
+                                            </div>
+                                        </div>
+                                        <div class="tab-pane fade" id="desc">
+                                            <p><strong>وصف الملابس:</strong> ${report.clothing_description || 'لا يوجد'}</p>
+                                            <p><strong>العلامات المميزة:</strong> ${report.distinctive_features || 'لا يوجد'}</p>
+                                        </div>
+                                        <div class="tab-pane fade" id="actions">
+                                            <div class="d-flex flex-wrap gap-2">
+                                                <button class="btn btn-success" onclick="openReportModal(${report.id}, 'resolve', '${report.person_name}')">إغلاق وحل البلاغ</button>
+                                                <button class="btn btn-warning" onclick="escalateReport(${report.id})">تصعيد (أهمية عالية)</button>
+                                                <button class="btn btn-secondary" onclick="mergeDialog(${report.id})">دمج مع بلاغ مكرر</button>
+                                                <button class="btn btn-danger" onclick="openReportModal(${report.id}, 'reject', '${report.person_name}')">رفض البلاغ</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    $('#report-details-content').html(html);
+                    $('#reportDetailsModal').modal('show');
+                }
+            });
+        }
+
+        window.escalateReport = function (id) {
+            if (!confirm('هل أنت متأكد من تصعيد هذا البلاغ للأهمية القصوى؟')) return;
+            $.ajax({
+                url: `/api/reports/reports/${id}/escalate/`,
+                method: 'POST',
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+                success: function (res) {
+                    alert(res.message);
+                    loadReports(currentPage);
+                    $('#reportDetailsModal').modal('hide');
+                }
+            });
+        }
+
+        window.mergeDialog = function (id) {
+            let targetCode = prompt('يرجى إدخال كود البلاغ (Report Code) الذي تريد دمج هذا البلاغ فيه:');
+            if (!targetCode) return;
+
+            // Search for the target report code to get ID
+            $.ajax({
+                url: `/api/reports/reports/?search=${targetCode}`,
+                method: 'GET',
+                success: function (response) {
+                    if (response.results && response.results.length > 0) {
+                        let target = response.results[0];
+                        if (confirm(`هل تريد دمج هذا البلاغ في بلاغ الشخص: ${target.person_name}؟`)) {
+                            $.ajax({
+                                url: `/api/reports/reports/${id}/merge/`,
+                                method: 'POST',
+                                data: JSON.stringify({ target_report_id: target.id }),
+                                contentType: 'application/json',
+                                headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+                                success: function (res) {
+                                    alert(res.message);
+                                    loadReports(currentPage);
+                                    $('#reportDetailsModal').modal('hide');
+                                }
+                            });
+                        }
+                    } else {
+                        alert('لم يتم العثور على بلاغ بهذا الكود');
+                    }
+                }
+            });
+        }
+
+        window.openReportModal = function (reportId, action, personName) {
+            $('#target-report-id').val(reportId);
+            $('#target-report-action').val(action);
+            $('#reportActionTitle').text(`${action === 'resolve' ? 'إغلاق' : 'مراجعة'} بلاغ: ${personName}`);
+
+            $('#rejection-reason-container').addClass('d-none');
+            $('#close-reason-container').addClass('d-none');
+
+            if (action === 'reject') $('#rejection-reason-container').removeClass('d-none');
+            if (action === 'resolve') $('#close-reason-container').removeClass('d-none');
+
+            $('#reportActionModal').modal('show');
+            $('#reportDetailsModal').modal('hide');
+        };
+
+        $('#confirm-report-btn').on('click', function () {
+            let reportId = $('#target-report-id').val();
+            let action = $('#target-report-action').val();
+            let notes = $('#review-notes').val();
+
+            let url = `/api/reports/reports/${reportId}/review/`;
+            let data = { action: action, notes: notes };
+
+            if (action === 'reject') {
+                data.rejection_reason = $('#rejection-reason').val();
+                if (!data.rejection_reason) return alert('يرجى ذكر سبب الرفض');
+            }
+
+            if (action === 'resolve') {
+                url = `/api/reports/reports/${reportId}/resolve/`;
+                data = { close_reason: $('#close-reason').val() };
+                if (!data.close_reason) return alert('يرجى ذكر سبب الإغلاق');
+            }
+
+            $.ajax({
+                url: url,
+                method: 'POST',
+                data: JSON.stringify(data),
+                contentType: 'application/json',
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+                success: function (response) {
+                    $('#reportActionModal').modal('hide');
+                    loadReports(currentPage);
+                    alert(response.message);
+                },
+                error: function (xhr) {
+                    let errors = xhr.responseJSON || {};
+                    let errorMsg = 'حدث خطأ أثناء تنفيذ الإجراء:\n';
+                    if (errors.detail) {
+                        errorMsg += errors.detail;
+                    } else {
+                        for (let key in errors) {
+                            errorMsg += `${key}: ${errors[key]}\n`;
+                        }
+                    }
+                    alert(errorMsg || 'حدث خطأ غير معروف');
+                }
+            });
+        });
+
+        // Event handler for Creating New Report
+        $('#save-new-report-btn').on('click', function () {
+            let form = $('#create-report-form')[0];
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+
+            let formData = new FormData(form);
+
+            $.ajax({
+                url: '/api/reports/reports/',
+                method: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+                success: function (response) {
+                    $('#createReportModal').modal('hide');
+                    form.reset();
+                    loadReports(1);
+
+                    if (response.match_found) {
+                        let similarity = Math.round(response.top_match_similarity * 100);
+                        if (confirm(`⚠️ تنبيه: تم العثور على تطابق محتمل بنسبة ${similarity}%!\n\nهل تريد الانتقال لصفحة المطابقة لعرض التفاصيل الآن؟`)) {
+                            // توجيه المستخدم لصفحة المطابقة (سنحتاج التأكد من دعم الصفحة للمتغير)
+                            window.location.href = `/admin-dashboard/matches/`;
+                        }
+                    } else {
+                        alert('تم إنشاء البلاغ بنجاح');
+                    }
+                },
+                error: function (xhr) {
+                    let errors = xhr.responseJSON || {};
+                    let errorMsg = 'حدث خطأ أثناء إنشاء البلاغ:\n';
+                    for (let key in errors) {
+                        errorMsg += `${key}: ${errors[key]}\n`;
+                    }
+                    alert(errorMsg);
+                }
+            });
+        });
+
+        $('#filter-form').on('submit', function (e) {
+            e.preventDefault();
+            loadReports(1);
+        });
+
+        loadReports();
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,216 @@
+{% extends 'admin_dashboard/base_dashboard.html' %}
+
+{% block title %}مراقبة المعالجة | لوحة التحكم{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">مراقبة معالجة الصور والذكاء الاصطناعي</h4>
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{% url 'admin_dashboard:index' %}">الرئيسية</a></li>
+            <li class="breadcrumb-item active">مراقبة المعالجة</li>
+        </ol>
+    </nav>
+</div>
+
+<div class="row g-4 mb-4" id="monitor-stats">
+    <div class="col-md-3">
+        <div class="card stat-card border-start border-primary border-4">
+            <div class="card-body">
+                <h6 class="text-muted small fw-bold">إجمالي الصور</h6>
+                <h3 class="mb-0" id="total-images">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-start border-warning border-4">
+            <div class="card-body">
+                <h6 class="text-muted small fw-bold">في الانتظار</h6>
+                <h3 class="mb-0" id="pending-images">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-start border-success border-4">
+            <div class="card-body">
+                <h6 class="text-muted small fw-bold">تمت المعالجة</h6>
+                <h3 class="mb-0" id="processed-images">0</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-start border-danger border-4">
+            <div class="card-body">
+                <h6 class="text-muted small fw-bold">فشل المعالجة</h6>
+                <h3 class="mb-0" id="failed-images">0</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card stat-card">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold">سجل معالجة الصور (Landmarks & Quality)</h6>
+        <div class="d-flex gap-2">
+            <select id="status-filter" class="form-select form-select-sm" style="width: 150px;">
+                <option value="">كل الحالات</option>
+                <option value="completed">مكتملة</option>
+                <option value="pending">في الانتظار</option>
+                <option value="failed">فاشلة</option>
+            </select>
+            <button class="btn btn-sm btn-outline-primary" onclick="loadEmbeddings()">تحديث <i
+                    class="fas fa-sync-alt"></i></button>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="bg-light">
+                <tr>
+                    <th>الصورة</th>
+                    <th>البلاغ</th>
+                    <th>جودة الصورة</th>
+                    <th>عدد الوجوه</th>
+                    <th>الحالة</th>
+                    <th>تاريخ المعالجة</th>
+                    <th>الإجراءات</th>
+                </tr>
+            </thead>
+            <tbody id="embeddings-table-body">
+                <!-- Data via AJAX -->
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer bg-white border-0 text-center">
+        <nav id="pagination-nav">
+            <ul class="pagination pagination-sm justify-content-center mb-0"></ul>
+        </nav>
+    </div>
+</div>
+
+<!-- Reprocess Confirmation Modal -->
+<div class="modal fade" id="reprocessModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-body text-center py-4">
+                <i class="fas fa-redo fa-3x text-warning mb-3"></i>
+                <h6>إعادة معالجة الصورة؟</h6>
+                <p class="small text-muted">سيتم إعادة استخراج ملامح الوجه وتحليل الجودة لهذه الصورة.</p>
+                <div class="d-flex justify-content-center gap-2 mt-3">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="button" class="btn btn-warning btn-sm" id="confirm-reprocess">تأكيد</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        let currentPage = 1;
+        let activeEmbeddingId = null;
+
+        window.loadEmbeddings = function (page = 1) {
+            currentPage = page;
+            const status = $('#status-filter').val();
+            $.ajax({
+                url: `/api/matching/embeddings/?page=${page}&processing_status=${status}`,
+                method: 'GET',
+                success: function (response) {
+                    renderTable(response.results);
+                    updateStats(response);
+                    renderPagination(response);
+                }
+            });
+        }
+
+        function renderTable(data) {
+            let html = '';
+            data.forEach(emb => {
+                let statusBadge = '';
+                if (emb.processing_status === 'completed') statusBadge = '<span class="badge bg-soft-success text-success">مكتملة</span>';
+                else if (emb.processing_status === 'pending') statusBadge = '<span class="badge bg-soft-warning text-warning">في الانتظار</span>';
+                else statusBadge = '<span class="badge bg-soft-danger text-danger">فشلت</span>';
+
+                // Quality Bar
+                const qualityColor = emb.quality_score > 0.7 ? 'success' : (emb.quality_score > 0.4 ? 'warning' : 'danger');
+                const qualityBar = `
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="progress flex-grow-1" style="height: 6px;">
+                            <div class="progress-bar bg-${qualityColor}" role="progressbar" style="width: ${emb.quality_score * 100}%"></div>
+                        </div>
+                        <small class="fw-bold">${(emb.quality_score * 100).toFixed(0)}%</small>
+                    </div>
+                `;
+
+                html += `
+                <tr>
+                    <td>
+                        <img src="${emb.image_url}" class="rounded shadow-sm" style="width: 50px; height: 50px; object-fit: cover; cursor: pointer;" onclick="window.open('${emb.image_url}')">
+                    </td>
+                    <td>
+                        <div class="fw-bold small">${emb.report_name}</div>
+                        <div class="text-muted small">${emb.report_code}</div>
+                    </td>
+                    <td style="width: 150px;">${qualityBar}</td>
+                    <td class="text-center">
+                        <span class="badge ${emb.face_count > 0 ? 'bg-primary' : 'bg-secondary'}">${emb.face_count}</span>
+                    </td>
+                    <td>${statusBadge}</td>
+                    <td class="small text-muted">${emb.processed_at ? new Date(emb.processed_at).toLocaleString('ar-SA') : '---'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-light border" onclick="openReprocessModal(${emb.id})">
+                            <i class="fas fa-redo text-warning"></i>
+                        </button>
+                    </td>
+                </tr>
+                `;
+            });
+            $('#embeddings-table-body').html(html || '<tr><td colspan="7" class="text-center py-5">لا توجد بيانات معالجة</td></tr>');
+        }
+
+        function updateStats(response) {
+            // In a real app, these would come from a dedicated stats endpoint
+            $('#total-images').text(response.count);
+        }
+
+        function renderPagination(response) {
+            let html = '';
+            if (response.previous) {
+                html += `<li class="page-item"><a class="page-link" href="#" onclick="loadEmbeddings(${currentPage - 1})">السابق</a></li>`;
+            }
+            html += `<li class="page-item active"><a class="page-link" href="#">${currentPage}</a></li>`;
+            if (response.next) {
+                html += `<li class="page-item"><a class="page-link" href="#" onclick="loadEmbeddings(${currentPage + 1})">التالي</a></li>`;
+            }
+            $('#pagination-nav ul').html(html);
+        }
+
+        window.openReprocessModal = function (id) {
+            activeEmbeddingId = id;
+            $('#reprocessModal').modal('show');
+        }
+
+        $('#confirm-reprocess').click(function () {
+            if (!activeEmbeddingId) return;
+            $.ajax({
+                url: `/api/matching/embeddings/${activeEmbeddingId}/reprocess/`,
+                method: 'POST',
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+                success: function (res) {
+                    $('#reprocessModal').modal('hide');
+                    loadEmbeddings(currentPage);
+                    alert(res.message);
+                }
+            });
+        });
+
+        $('#status-filter').change(function () {
+            loadEmbeddings(1);
+        });
+
+        loadEmbeddings();
+    });
+</script>
+{% endblock %}

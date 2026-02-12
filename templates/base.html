@@ -1,0 +1,1566 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة تحكم المشرف - نظام البحث عن المفقودين</title>
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+
+    <!-- CSS Framework -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- DataTables -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+
+    <!-- Custom CSS -->
+    <style>
+        :root {
+            /* Color Palette */
+            --primary-color: #1a56db;
+            --primary-dark: #1e429f;
+            --primary-light: #3f83f8;
+            --secondary-color: #046c4e;
+            --success-color: #0e9f6e;
+            --warning-color: #f59e0b;
+            --danger-color: #dc2626;
+            --info-color: #3b82f6;
+            --dark-color: #111827;
+            --light-color: #f9fafb;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+
+            /* Typography */
+            --font-family: 'IBM Plex Sans Arabic', sans-serif;
+            --font-size-xs: 0.75rem;
+            --font-size-sm: 0.875rem;
+            --font-size-base: 1rem;
+            --font-size-lg: 1.125rem;
+            --font-size-xl: 1.25rem;
+            --font-size-2xl: 1.5rem;
+
+            /* Spacing */
+            --spacing-1: 0.25rem;
+            --spacing-2: 0.5rem;
+            --spacing-3: 0.75rem;
+            --spacing-4: 1rem;
+            --spacing-6: 1.5rem;
+            --spacing-8: 2rem;
+
+            /* Border Radius */
+            --radius-sm: 0.25rem;
+            --radius: 0.5rem;
+            --radius-md: 0.75rem;
+            --radius-lg: 1rem;
+            --radius-xl: 1.5rem;
+
+            /* Shadows */
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background-color: var(--gray-50);
+            color: var(--gray-800);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* RTL Specific */
+        body.rtl {
+            text-align: right;
+            direction: rtl;
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--gray-100);
+            border-radius: var(--radius);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--gray-300);
+            border-radius: var(--radius);
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--gray-400);
+        }
+
+        /* Utility Classes */
+        .text-primary {
+            color: var(--primary-color) !important;
+        }
+
+        .text-secondary {
+            color: var(--secondary-color) !important;
+        }
+
+        .text-success {
+            color: var(--success-color) !important;
+        }
+
+        .text-warning {
+            color: var(--warning-color) !important;
+        }
+
+        .text-danger {
+            color: var(--danger-color) !important;
+        }
+
+        .text-info {
+            color: var(--info-color) !important;
+        }
+
+        .text-dark {
+            color: var(--dark-color) !important;
+        }
+
+        .text-light {
+            color: var(--light-color) !important;
+        }
+
+        .bg-primary {
+            background-color: var(--primary-color) !important;
+        }
+
+        .bg-secondary {
+            background-color: var(--secondary-color) !important;
+        }
+
+        .bg-success {
+            background-color: var(--success-color) !important;
+        }
+
+        .bg-warning {
+            background-color: var(--warning-color) !important;
+        }
+
+        .bg-danger {
+            background-color: var(--danger-color) !important;
+        }
+
+        .bg-info {
+            background-color: var(--info-color) !important;
+        }
+
+        .bg-dark {
+            background-color: var(--dark-color) !important;
+        }
+
+        .bg-light {
+            background-color: var(--light-color) !important;
+        }
+
+        /* Card Styling */
+        .card {
+            border: none;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .card:hover {
+            box-shadow: var(--shadow-lg);
+            transform: translateY(-2px);
+        }
+
+        .card-header {
+            background: white;
+            border-bottom: 2px solid var(--gray-100);
+            border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important;
+            padding: var(--spacing-6) var(--spacing-8);
+            font-weight: 600;
+        }
+
+        .card-body {
+            padding: var(--spacing-8);
+        }
+
+        /* Button Styling */
+        .btn {
+            border-radius: var(--radius);
+            padding: var(--spacing-3) var(--spacing-6);
+            font-weight: 500;
+            transition: all 0.3s ease;
+            border: none;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+
+        /* Badge Styling */
+        .badge {
+            padding: var(--spacing-2) var(--spacing-3);
+            border-radius: var(--radius);
+            font-weight: 500;
+            font-size: var(--font-size-xs);
+        }
+
+        .badge-success {
+            background-color: var(--success-color);
+        }
+
+        .badge-warning {
+            background-color: var(--warning-color);
+        }
+
+        .badge-danger {
+            background-color: var(--danger-color);
+        }
+
+        .badge-info {
+            background-color: var(--info-color);
+        }
+
+        .badge-secondary {
+            background-color: var(--secondary-color);
+        }
+
+        /* Table Styling */
+        .table {
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .table th {
+            background-color: var(--gray-50);
+            font-weight: 600;
+            color: var(--gray-700);
+            border-bottom: 2px solid var(--gray-200);
+            padding: var(--spacing-4);
+        }
+
+        .table td {
+            padding: var(--spacing-4);
+            border-bottom: 1px solid var(--gray-100);
+            vertical-align: middle;
+        }
+
+        .table tr:hover {
+            background-color: var(--gray-50);
+        }
+
+        /* Form Styling */
+        .form-control,
+        .form-select {
+            border-radius: var(--radius);
+            border: 2px solid var(--gray-200);
+            padding: var(--spacing-3) var(--spacing-4);
+            transition: all 0.3s ease;
+        }
+
+        .form-control:focus,
+        .form-select:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.1);
+        }
+
+        /* Alert Styling */
+        .alert {
+            border-radius: var(--radius);
+            border: none;
+            padding: var(--spacing-4);
+        }
+
+        .alert-success {
+            background-color: rgba(14, 159, 110, 0.1);
+            color: var(--success-color);
+        }
+
+        .alert-warning {
+            background-color: rgba(245, 158, 11, 0.1);
+            color: var(--warning-color);
+        }
+
+        .alert-danger {
+            background-color: rgba(220, 38, 38, 0.1);
+            color: var(--danger-color);
+        }
+
+        /* Progress Bar */
+        .progress {
+            height: 10px;
+            border-radius: var(--radius);
+            background-color: var(--gray-200);
+        }
+
+        .progress-bar {
+            border-radius: var(--radius);
+        }
+
+        /* Loading Spinner */
+        .spinner-border {
+            width: 1.5rem;
+            height: 1.5rem;
+        }
+
+        /* Animation Classes */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        .slide-in {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(-20px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Print Styles */
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+
+            .card {
+                box-shadow: none !important;
+            }
+        }
+    </style>
+
+    <!-- Page Specific CSS -->
+    {% block styles %}{% endblock %}
+</head>
+
+<body class="rtl">
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay"
+        class="position-fixed top-0 start-0 w-100 h-100 align-items-center justify-content-center bg-white"
+        style="z-index: 9999; display: flex;">
+        <div class="text-center">
+            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+                <span class="visually-hidden">جاري التحميل...</span>
+            </div>
+            <p class="mt-3 text-primary">جاري تحميل البيانات...</p>
+        </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div class="container-fluid p-0">
+        <!-- Navigation -->
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-lg">
+            <div class="container-fluid">
+                <!-- Logo & Brand -->
+                <a class="navbar-brand d-flex align-items-center" href="#">
+                    <i class="fas fa-search-location fa-2x text-primary me-3"></i>
+                    <div>
+                        <h4 class="mb-0 fw-bold">نظام البحث عن المفقودين</h4>
+                        <small class="text-light opacity-75">لوحة تحكم المشرف</small>
+                    </div>
+                </a>
+
+                <!-- Mobile Toggle -->
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Navigation Items -->
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav ms-auto">
+                        <!-- Dashboard -->
+                        <li class="nav-item">
+                            <a class="nav-link active" href="#" onclick="loadDashboard()">
+                                <i class="fas fa-tachometer-alt me-2"></i>الرئيسية
+                            </a>
+                        </li>
+
+                        <!-- Reports -->
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                                <i class="fas fa-flag me-2"></i>البلاغات
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="/dashboard/reports/">جميع البلاغات</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="loadPendingReports()">قيد المراجعة <span
+                                            class="badge bg-warning ms-2" id="pendingCount">0</span></a></li>
+                                <li><a class="dropdown-item" href="#" onclick="loadMissingReports()">مفقودين</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="loadFoundReports()">معثور عليهم</a></li>
+                                <li>
+                                    <hr class="dropdown-divider">
+                                </li>
+                                <li><a class="dropdown-item" href="#" onclick="showReportForm()">إنشاء بلاغ جديد</a>
+                                </li>
+                            </ul>
+                        </li>
+
+                        <!-- Matches -->
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                                <i class="fas fa-user-friends me-2"></i>المطابقة
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="#" onclick="loadMatches()">جميع المطابقات</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="loadPendingMatches()">قيد المراجعة <span
+                                            class="badge bg-warning ms-2" id="pendingMatchesCount">0</span></a></li>
+                                <li><a class="dropdown-item" href="#" onclick="loadHighConfidenceMatches()">ثقة
+                                        عالية</a></li>
+                                <li>
+                                    <hr class="dropdown-divider">
+                                </li>
+                                <li><a class="dropdown-item" href="#" onclick="runAutoMatching()">تشغيل المطابقة
+                                        التلقائية</a></li>
+                            </ul>
+                        </li>
+
+                        <!-- Users -->
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                                <i class="fas fa-users me-2"></i>المستخدمين
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="#" onclick="loadUsers()">جميع المستخدمين</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="loadPendingVerifications()">طلبات التحقق
+                                        <span class="badge bg-warning ms-2" id="pendingVerificationsCount">0</span></a>
+                                </li>
+                                <li><a class="dropdown-item" href="#" onclick="loadVolunteers()">المتطوعين</a></li>
+                                <li>
+                                    <hr class="dropdown-divider">
+                                </li>
+                                <li><a class="dropdown-item" href="#" onclick="showUserForm()">إضافة مستخدم جديد</a>
+                                </li>
+                            </ul>
+                        </li>
+
+                        <!-- Analytics -->
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" onclick="loadAnalytics()">
+                                <i class="fas fa-chart-bar me-2"></i>الإحصائيات
+                            </a>
+                        </li>
+
+                        <!-- Notifications -->
+                        <li class="nav-item dropdown">
+                            <a class="nav-link position-relative" href="#" role="button" data-bs-toggle="dropdown">
+                                <i class="fas fa-bell me-2"></i>
+                                <span
+                                    class="position-absolute top-0 start-0 translate-middle badge rounded-pill bg-danger"
+                                    id="notificationCount">0</span>
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-end" style="width: 350px;">
+                                <li class="dropdown-header d-flex justify-content-between">
+                                    <span>الإشعارات</span>
+                                    <a href="#" class="text-primary" onclick="loadNotifications()">عرض الكل</a>
+                                </li>
+                                <li>
+                                    <hr class="dropdown-divider">
+                                </li>
+                                <div id="notificationList" style="max-height: 300px; overflow-y: auto;">
+                                    <!-- Notifications will be loaded here -->
+                                </div>
+                                <li class="text-center p-2">
+                                    <a href="#" class="btn btn-sm btn-outline-primary" onclick="loadNotifications()">عرض
+                                        المزيد</a>
+                                </li>
+                            </ul>
+                        </li>
+
+                        <!-- User Menu -->
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                                <i class="fas fa-user-circle me-2"></i>
+                                <span id="userName">المشرف</span>
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li class="dropdown-header">
+                                    <small>مسجل كـ</small>
+                                    <div class="fw-bold" id="userEmail">admin@example.com</div>
+                                </li>
+                                <li>
+                                    <hr class="dropdown-divider">
+                                </li>
+                                <li><a class="dropdown-item" href="#" onclick="loadProfile()"><i
+                                            class="fas fa-user me-2"></i>الملف الشخصي</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="loadSettings()"><i
+                                            class="fas fa-cog me-2"></i>الإعدادات</a></li>
+                                <li>
+                                    <hr class="dropdown-divider">
+                                </li>
+                                <li><a class="dropdown-item text-danger" href="#" onclick="logout()"><i
+                                            class="fas fa-sign-out-alt me-2"></i>تسجيل الخروج</a></li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Sidebar for Desktop -->
+        <div class="d-flex">
+            <div class="d-none d-lg-block sidebar bg-white shadow"
+                style="width: 280px; min-height: calc(100vh - 73px);">
+                <div class="p-4">
+                    <h6 class="text-uppercase text-gray-600 mb-3"><i class="fas fa-bars me-2"></i>القائمة السريعة</h6>
+
+                    <!-- Quick Stats -->
+                    <div class="mb-4">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <span class="text-sm">اليوم</span>
+                            <span class="badge bg-primary" id="todayDate">2024-04-16</span>
+                        </div>
+
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <div class="card card-sm bg-primary text-white">
+                                    <div class="card-body p-3">
+                                        <div class="text-center">
+                                            <h4 class="mb-1" id="todayReports">0</h4>
+                                            <small class="opacity-75">بلاغات جديدة</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="card card-sm bg-success text-white">
+                                    <div class="card-body p-3">
+                                        <div class="text-center">
+                                            <h4 class="mb-1" id="todayMatches">0</h4>
+                                            <small class="opacity-75">مطابقات جديدة</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="card card-sm bg-warning text-white">
+                                    <div class="card-body p-3">
+                                        <div class="text-center">
+                                            <h4 class="mb-1" id="todayUsers">0</h4>
+                                            <small class="opacity-75">مستخدمين جدد</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="card card-sm bg-info text-white">
+                                    <div class="card-body p-3">
+                                        <div class="text-center">
+                                            <h4 class="mb-1" id="todayResolved">0</h4>
+                                            <small class="opacity-75">تم حلها</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="mb-4">
+                        <h6 class="text-uppercase text-gray-600 mb-3"><i class="fas fa-bolt me-2"></i>إجراءات سريعة</h6>
+                        <div class="list-group list-group-flush">
+                            <a href="#" class="list-group-item list-group-item-action border-0 rounded mb-2"
+                                onclick="showReportForm()">
+                                <i class="fas fa-plus-circle text-primary me-2"></i>إنشاء بلاغ
+                            </a>
+                            <a href="#" class="list-group-item list-group-item-action border-0 rounded mb-2"
+                                onclick="runAutoMatching()">
+                                <i class="fas fa-robot text-success me-2"></i>مطابقة تلقائية
+                            </a>
+                            <a href="#" class="list-group-item list-group-item-action border-0 rounded mb-2"
+                                onclick="loadPendingReports()">
+                                <i class="fas fa-clock text-warning me-2"></i>مراجعة البلاغات
+                            </a>
+                            <a href="#" class="list-group-item list-group-item-action border-0 rounded"
+                                onclick="loadPendingVerifications()">
+                                <i class="fas fa-user-check text-info me-2"></i>طلبات التحقق
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- System Status -->
+                    <div>
+                        <h6 class="text-uppercase text-gray-600 mb-3"><i class="fas fa-server me-2"></i>حالة النظام</h6>
+                        <div class="list-group list-group-flush">
+                            <div class="list-group-item border-0 d-flex justify-content-between align-items-center">
+                                <span>حالة النظام</span>
+                                <span class="badge bg-success"><i class="fas fa-circle me-1"></i> نشط</span>
+                            </div>
+                            <div class="list-group-item border-0 d-flex justify-content-between align-items-center">
+                                <span>قاعدة البيانات</span>
+                                <span class="badge bg-success"><i class="fas fa-circle me-1"></i> متصل</span>
+                            </div>
+                            <div class="list-group-item border-0 d-flex justify-content-between align-items-center">
+                                <span>الذاكرة</span>
+                                <div class="d-flex align-items-center">
+                                    <div class="progress" style="width: 80px; height: 6px;">
+                                        <div class="progress-bar bg-success" style="width: 65%;"></div>
+                                    </div>
+                                    <small class="ms-2">65%</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="flex-grow-1 p-3" id="mainContent" style="min-height: calc(100vh - 73px);">
+                <!-- Content will be loaded here dynamically -->
+                {% block content %}
+                <div id="dashboardContent">
+                    <!-- Dashboard will be loaded here via JS -->
+                </div>
+                {% endblock %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal fade" id="mainModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalTitle">عنوان النافذة</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="modalBody">
+                    <!-- Modal content will be loaded here -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="button" class="btn btn-primary" id="modalActionBtn">تنفيذ</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container position-fixed bottom-0 start-0 p-3">
+        <!-- Toasts will be added here -->
+    </div>
+
+    <!-- JavaScript Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+
+    <!-- Main JavaScript -->
+    <script>
+        // Global Variables
+        let currentUser = {};
+        let notifications = [];
+        let stats = {};
+
+        // Initialize when page loads
+        $(document).ready(function () {
+            initializeApp();
+
+            if ($('#dashboardContent').length > 0) {
+                loadDashboard();
+            }
+            startLiveUpdates();
+        });
+
+        // Application Initialization
+        function initializeApp() {
+            // Set current date
+            const today = new Date().toLocaleDateString('ar-SA');
+            $('#todayDate').text(today);
+
+            // Load user info
+            loadCurrentUser();
+
+            // Load notifications
+            loadNotificationCount();
+
+            // Load quick stats
+            loadQuickStats();
+
+            // Set up event listeners
+            setupEventListeners();
+        }
+
+        // Load Current User Info
+        function loadCurrentUser() {
+            // Simulate API call
+            setTimeout(() => {
+                currentUser = {
+                    id: 1,
+                    name: "مدير النظام",
+                    email: "admin@missing-system.com",
+                    role: "super_admin",
+                    avatar: "/static/images/avatar.jpg"
+                };
+
+                $('#userName').text(currentUser.name);
+                $('#userEmail').text(currentUser.email);
+            }, 100);
+        }
+
+        // Load Quick Stats
+        function loadQuickStats() {
+            // Simulate API call
+            $.ajax({
+                url: '/api/analytics/dashboard/',
+                method: 'GET',
+                success: function (data) {
+                    stats = data;
+                    updateQuickStats(data);
+                },
+                error: function () {
+                    console.log('Error loading quick stats');
+                }
+            });
+        }
+
+        function updateQuickStats(data) {
+            $('#todayReports').text(data.daily_stats?.new_reports || 0);
+            $('#todayMatches').text(data.daily_stats?.new_matches || 0);
+            $('#todayUsers').text(data.daily_stats?.new_users || 0);
+            $('#todayResolved').text(data.daily_stats?.resolved_reports || 0);
+
+            // Update counts in navigation
+            $('#pendingCount').text(data.daily_stats?.pending_review_reports || 0);
+            $('#pendingMatchesCount').text(data.daily_stats?.pending_review_reports || 0);
+            $('#pendingVerificationsCount').text(data.daily_stats?.pending_review_reports || 0);
+        }
+
+        // Notification Functions
+        function loadNotificationCount() {
+            // Simulate API call
+            $.ajax({
+                url: '/api/notifications/notifications/unread_count/',
+                method: 'GET',
+                success: function (data) {
+                    $('#notificationCount').text(data.count || 0);
+                    if (data.count > 0) {
+                        loadNotificationList();
+                    }
+                }
+            });
+        }
+
+        function loadNotificationList() {
+            $.ajax({
+                url: '/api/notifications/notifications/?limit=5',
+                method: 'GET',
+                success: function (data) {
+                    notifications = data.results;
+                    renderNotificationList();
+                }
+            });
+        }
+
+        function renderNotificationList() {
+            const container = $('#notificationList');
+            container.empty();
+
+            if (notifications.length === 0) {
+                container.html(`
+                    <div class="text-center p-4">
+                        <i class="fas fa-bell-slash fa-2x text-gray-400 mb-3"></i>
+                        <p class="text-gray-500">لا توجد إشعارات جديدة</p>
+                    </div>
+                `);
+                return;
+            }
+
+            notifications.forEach(notification => {
+                const timeAgo = notification.time_ago || 'قبل قليل';
+                const icon = getNotificationIcon(notification.notification_type);
+                const badgeClass = notification.priority_level === 'urgent' ? 'danger' : 'primary';
+
+                container.append(`
+                    <li class="dropdown-item p-3 border-bottom">
+                        <div class="d-flex align-items-start">
+                            <div class="me-3">
+                                <span class="badge bg-${badgeClass} p-2">
+                                    <i class="fas fa-${icon}"></i>
+                                </span>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">${notification.title}</h6>
+                                <p class="text-sm text-gray-600 mb-1">${notification.message}</p>
+                                <small class="text-gray-500">${timeAgo}</small>
+                            </div>
+                            ${!notification.is_read ? `<span class="badge bg-danger rounded-pill ms-2">جديد</span>` : ''}
+                        </div>
+                    </li>
+                `);
+            });
+        }
+
+        function getNotificationIcon(type) {
+            const icons = {
+                'match_found': 'user-friends',
+                'report_status_change': 'flag',
+                'report_reviewed': 'check-circle',
+                'message_from_admin': 'envelope',
+                'verification_status': 'user-check',
+                'system_update': 'sync',
+                'volunteer_assignment': 'hands-helping',
+                'urgent_alert': 'exclamation-triangle'
+            };
+            return icons[type] || 'bell';
+        }
+
+        // Page Loading Functions
+        function loadDashboard() {
+            showLoading();
+            $.ajax({
+                url: '/api/analytics/dashboard/',
+                method: 'GET',
+                success: function (data) {
+                    try {
+                        if (!data) {
+                            console.warn('No data received for dashboard');
+                            $('#dashboardContent').html(getEmptyStateHtml('لا توجد بيانات متاحة حالياً'));
+                            return;
+                        }
+                        renderDashboard(data);
+                    } catch (e) {
+                        console.error('Error rendering dashboard:', e);
+                        $('#dashboardContent').html(getErrorStateHtml('حدث خطأ أثناء عرض البيانات'));
+                    }
+                },
+                error: function (xhr, status, error) {
+                    console.error('Dashboard API Error:', error);
+                    // If 404 or empty, show empty state with zeros (the backend should handle this, but just in case)
+                    $('#dashboardContent').html(getErrorStateHtml('فشل تحميل بيانات لوحة التحكم'));
+                },
+                complete: function () {
+                    hideLoading();
+                }
+            });
+        }
+
+        function getEmptyStateHtml(message) {
+            return `
+                <div class="text-center p-5">
+                    <div class="mb-4">
+                        <i class="fas fa-inbox fa-4x text-gray-300"></i>
+                    </div>
+                    <h4>${message}</h4>
+                    <p class="text-gray-500">لا توجد بيانات كافية لعرض الإحصائيات في الوقت الحالي.</p>
+                    <button class="btn btn-primary mt-3" onclick="loadDashboard()">
+                        <i class="fas fa-sync-alt me-2"></i>تحديث
+                    </button>
+                </div>
+            `;
+        }
+
+        function getErrorStateHtml(message) {
+            return `
+                <div class="text-center p-5">
+                    <div class="mb-4">
+                        <i class="fas fa-exclamation-triangle fa-4x text-danger opacity-50"></i>
+                    </div>
+                    <h4>${message}</h4>
+                    <p class="text-gray-500">حاول مرة أخرى في وقت لاحق.</p>
+                    <button class="btn btn-primary mt-3" onclick="loadDashboard()">
+                        <i class="fas fa-sync-alt me-2"></i>إعادة المحاولة
+                    </button>
+                </div>
+            `;
+        }
+
+        function loadReports() {
+            window.location.href = '/dashboard/reports/';
+        }
+
+        function loadUsers() {
+            showLoading();
+            // Implement simple list view or redirect
+            hideLoading();
+        }
+
+        function loadMatches() {
+            showLoading();
+            // Implement simple list view or redirect
+            hideLoading();
+        }
+
+        function loadAnalytics() {
+            // Redirect to analytics page
+        }
+
+        // Render Functions
+        function renderDashboard(data) {
+            const content = $('#dashboardContent');
+            if (content.length === 0) return;
+
+            content.html(`
+                <div class="fade-in">
+                    <!-- Welcome Header -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <div class="card bg-gradient-primary text-white">
+                                <div class="card-body p-5">
+                                    <div class="row align-items-center">
+                                        <div class="col-md-8">
+                                            <h1 class="display-6 mb-3">مرحباً، ${currentUser.name}</h1>
+                                            <p class="lead mb-4">نظامك الإداري جاهز للعمل. إليك نظرة سريعة على أداء النظام.</p>
+                                            <div class="d-flex gap-3">
+                                                <button class="btn btn-light" onclick="showReportForm()">
+                                                    <i class="fas fa-plus-circle me-2"></i>إنشاء بلاغ
+                                                </button>
+                                                <button class="btn btn-outline-light" onclick="runAutoMatching()">
+                                                    <i class="fas fa-robot me-2"></i>تشغيل المطابقة
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4 text-center d-none d-md-block">
+                                            <i class="fas fa-chart-network fa-7x opacity-50"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Quick Stats Row -->
+                    <div class="row mb-4">
+                        <div class="col-xl-3 col-md-6 mb-4">
+                            <div class="card border-start border-primary border-4">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between">
+                                        <div>
+                                            <h6 class="text-primary">البلاغات النشطة</h6>
+                                            <h2 class="fw-bold">${data.daily_stats?.total_reports || 0}</h2>
+                                        </div>
+                                        <div class="avatar avatar-lg bg-primary-light text-primary rounded-circle">
+                                            <i class="fas fa-flag fa-2x"></i>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <span class="text-success">
+                                            <i class="fas fa-arrow-up"></i> ${data.daily_stats?.new_reports || 0} جديد
+                                        </span>
+                                        <span class="text-gray-600 ms-2">اليوم</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-xl-3 col-md-6 mb-4">
+                            <div class="card border-start border-success border-4">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between">
+                                        <div>
+                                            <h6 class="text-success">المطابقات الناجحة</h6>
+                                            <h2 class="fw-bold">${data.daily_stats?.accepted_matches || 0}</h2>
+                                        </div>
+                                        <div class="avatar avatar-lg bg-success-light text-success rounded-circle">
+                                            <i class="fas fa-user-friends fa-2x"></i>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <span class="text-success">
+                                            <i class="fas fa-arrow-up"></i> ${Math.round(data.daily_stats?.match_success_rate || 0)}%
+                                        </span>
+                                        <span class="text-gray-600 ms-2">معدل النجاح</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-xl-3 col-md-6 mb-4">
+                            <div class="card border-start border-warning border-4">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between">
+                                        <div>
+                                            <h6 class="text-warning">المستخدمين النشطين</h6>
+                                            <h2 class="fw-bold">${data.daily_stats?.active_users || 0}</h2>
+                                        </div>
+                                        <div class="avatar avatar-lg bg-warning-light text-warning rounded-circle">
+                                            <i class="fas fa-users fa-2x"></i>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <span class="text-success">
+                                            <i class="fas fa-arrow-up"></i> ${data.daily_stats?.new_users || 0} جديد
+                                        </span>
+                                        <span class="text-gray-600 ms-2">اليوم</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-xl-3 col-md-6 mb-4">
+                            <div class="card border-start border-info border-4">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between">
+                                        <div>
+                                            <h6 class="text-info">البلاغات المحلولة</h6>
+                                            <h2 class="fw-bold">${data.daily_stats?.resolved_reports || 0}</h2>
+                                        </div>
+                                        <div class="avatar avatar-lg bg-info-light text-info rounded-circle">
+                                            <i class="fas fa-check-circle fa-2x"></i>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <span class="text-success">
+                                            <i class="fas fa-arrow-up"></i> ${data.daily_stats?.new_matches || 0}
+                                        </span>
+                                        <span class="text-gray-600 ms-2">مطابقة جديدة</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Charts Row -->
+                    <div class="row mb-4">
+                        <div class="col-xl-8 mb-4">
+                            <div class="card h-100">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h6 class="mb-0">نشاط البلاغات (آخر 7 أيام)</h6>
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                                            هذا الأسبوع
+                                        </button>
+                                        <ul class="dropdown-menu">
+                                            <li><a class="dropdown-item" href="#" onclick="changeChartPeriod('week')">هذا الأسبوع</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="changeChartPeriod('month')">هذا الشهر</a></li>
+                                            <li><a class="dropdown-item" href="#" onclick="changeChartPeriod('year')">هذه السنة</a></li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="reportsChart" height="250"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-xl-4 mb-4">
+                            <div class="card h-100">
+                                <div class="card-header">
+                                    <h6 class="mb-0">توزيع البلاغات حسب النوع</h6>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="reportsPieChart" height="250"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Recent Activity -->
+                    <div class="row">
+                        <div class="col-lg-8 mb-4">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h6 class="mb-0">آخر البلاغات</h6>
+                                    <a href="/dashboard/reports/" class="btn btn-sm btn-primary">عرض الكل</a>
+                                </div>
+                                <div class="card-body p-0">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover mb-0">
+                                            <thead>
+                                                <tr>
+                                                    <th>كود البلاغ</th>
+                                                    <th>الاسم</th>
+                                                    <th>النوع</th>
+                                                    <th>الحالة</th>
+                                                    <th>التاريخ</th>
+                                                    <th>إجراءات</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="recentReportsTable">
+                                                <!-- Will be populated by JavaScript -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-lg-4 mb-4">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h6 class="mb-0">طلبات التحقق</h6>
+                                    <a href="#" class="btn btn-sm btn-warning" onclick="loadPendingVerifications()">عرض الكل</a>
+                                </div>
+                                <div class="card-body">
+                                    <div id="verificationRequests">
+                                        <!-- Will be populated by JavaScript -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `);
+
+            // Render charts
+            renderDashboardCharts(data);
+            loadRecentReports();
+            loadVerificationRequests();
+        }
+
+        function renderDashboardCharts(data) {
+            // Reports Line Chart
+            const ctx1 = document.getElementById('reportsChart').getContext('2d');
+            new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'],
+                    datasets: [
+                        {
+                            label: 'بلاغات مفقودين',
+                            data: [12, 19, 8, 15, 12, 10, 7],
+                            borderColor: '#dc2626',
+                            backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'بلاغات معثور عليهم',
+                            data: [8, 12, 6, 10, 9, 7, 5],
+                            borderColor: '#0e9f6e',
+                            backgroundColor: 'rgba(14, 159, 110, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            rtl: true
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 5
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Reports Pie Chart
+            const ctx2 = document.getElementById('reportsPieChart').getContext('2d');
+            new Chart(ctx2, {
+                type: 'doughnut',
+                data: {
+                    labels: ['مفقودين', 'معثور عليهم', 'محلولة', 'قيد المراجعة'],
+                    datasets: [{
+                        data: [45, 30, 20, 5],
+                        backgroundColor: [
+                            '#dc2626',
+                            '#0e9f6e',
+                            '#3b82f6',
+                            '#f59e0b'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            rtl: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function loadRecentReports() {
+            $.ajax({
+                url: '/api/reports/?limit=5&ordering=-created_at',
+                method: 'GET',
+                success: function (data) {
+                    const tbody = $('#recentReportsTable');
+                    tbody.empty();
+
+                    if (!data.results || data.results.length === 0) {
+                        tbody.html(`
+                            <tr>
+                                <td colspan="6" class="text-center py-4">
+                                    <div class="text-gray-500">
+                                        <i class="fas fa-folder-open fa-2x mb-2"></i>
+                                        <p class="mb-0">لا توجد بلاغات حديثة</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        `);
+                        return;
+                    }
+
+                    data.results.forEach(report => {
+                        const statusBadge = getStatusBadge(report.status);
+                        const typeIcon = report.report_type === 'missing' ?
+                            '<i class="fas fa-search text-danger"></i>' :
+                            '<i class="fas fa-user-check text-success"></i>';
+
+                        tbody.append(`
+                            <tr>
+                                <td><strong>${report.report_code}</strong></td>
+                                <td>${report.person_name}</td>
+                                <td>${typeIcon} ${report.report_type === 'missing' ? 'مفقود' : 'معثور'}</td>
+                                <td>${statusBadge}</td>
+                                <td>${new Date(report.created_at).toLocaleDateString('ar-SA')}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="viewReport('${report.report_id}')">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `);
+                    });
+                }
+            });
+        }
+
+        function loadVerificationRequests() {
+            $.ajax({
+                url: '/api/accounts/users/?verification_status=pending&limit=3',
+                method: 'GET',
+                success: function (data) {
+                    const container = $('#verificationRequests');
+                    container.empty();
+
+                    if (data.results.length === 0) {
+                        container.html(`
+                            <div class="text-center py-4">
+                                <i class="fas fa-user-check fa-2x text-gray-400 mb-3"></i>
+                                <p class="text-gray-500">لا توجد طلبات تحقق</p>
+                            </div>
+                        `);
+                        return;
+                    }
+
+                    data.results.forEach(user => {
+                        container.append(`
+                            <div class="d-flex align-items-center mb-3 p-3 border rounded">
+                                <div class="avatar avatar-md bg-warning text-white rounded-circle me-3">
+                                    <i class="fas fa-user"></i>
+                                </div>
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">${user.full_name}</h6>
+                                    <small class="text-gray-600">${user.email}</small>
+                                </div>
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-success" onclick="verifyUser('${user.id}', true)">
+                                        <i class="fas fa-check"></i>
+                                    </button>
+                                    <button class="btn btn-danger" onclick="verifyUser('${user.id}', false)">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        `);
+                    });
+                }
+            });
+        }
+
+        // Utility Functions
+        function showLoading() {
+            $('#loadingOverlay').fadeIn();
+        }
+
+        function hideLoading() {
+            $('#loadingOverlay').fadeOut(200, function () {
+                $(this).removeClass('d-flex').css('display', 'none');
+            });
+        }
+
+        function showToast(message, type = 'info') {
+            const types = {
+                'success': { bg: 'success', icon: 'check-circle' },
+                'error': { bg: 'danger', icon: 'exclamation-circle' },
+                'warning': { bg: 'warning', icon: 'exclamation-triangle' },
+                'info': { bg: 'info', icon: 'info-circle' }
+            };
+
+            const toastType = types[type] || types.info;
+            const toastId = 'toast-' + Date.now();
+
+            const toastHtml = `
+                <div id="${toastId}" class="toast align-items-center text-white bg-${toastType.bg} border-0" role="alert">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <i class="fas fa-${toastType.icon} me-2"></i>
+                            ${message}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                    </div>
+                </div>
+            `;
+
+            $('.toast-container').append(toastHtml);
+            const toast = new bootstrap.Toast(document.getElementById(toastId));
+            toast.show();
+
+            // Remove toast after it hides
+            $(`#${toastId}`).on('hidden.bs.toast', function () {
+                $(this).remove();
+            });
+        }
+
+        function getStatusBadge(status) {
+            const badges = {
+                'pending': { text: 'قيد المراجعة', class: 'warning' },
+                'active': { text: 'نشط', class: 'success' },
+                'resolved': { text: 'تم الحل', class: 'info' },
+                'closed': { text: 'مغلق', class: 'secondary' },
+                'rejected': { text: 'مرفوض', class: 'danger' }
+            };
+
+            const badge = badges[status] || badges.pending;
+            return `<span class="badge bg-${badge.class}">${badge.text}</span>`;
+        }
+
+        function setupEventListeners() {
+            // Keyboard shortcuts
+            $(document).keydown(function (e) {
+                // Ctrl + N: New Report
+                if (e.ctrlKey && e.key === 'n') {
+                    e.preventDefault();
+                    showReportForm();
+                }
+                // Ctrl + F: Search
+                if (e.ctrlKey && e.key === 'f') {
+                    e.preventDefault();
+                    $('#searchInput').focus();
+                }
+                // Ctrl + Q: Quick Stats
+                if (e.ctrlKey && e.key === 'q') {
+                    e.preventDefault();
+                    loadQuickStats();
+                }
+            });
+
+            // Window resize handling
+            $(window).resize(function () {
+                // Handle responsive adjustments
+                if ($(window).width() < 992) {
+                    $('.sidebar').hide();
+                } else {
+                    $('.sidebar').show();
+                }
+            });
+        }
+
+        function startLiveUpdates() {
+            // Update notification count every 30 seconds
+            setInterval(() => {
+                loadNotificationCount();
+                loadQuickStats();
+            }, 30000);
+        }
+
+        // Modal Functions
+        function showModal(title, content, actionText = 'حفظ', actionCallback = null) {
+            $('#modalTitle').text(title);
+            $('#modalBody').html(content);
+            $('#modalActionBtn').text(actionText);
+
+            if (actionCallback) {
+                $('#modalActionBtn').off('click').on('click', actionCallback);
+            } else {
+                $('#modalActionBtn').off('click');
+            }
+
+            const modal = new bootstrap.Modal(document.getElementById('mainModal'));
+            modal.show();
+        }
+
+        function showReportForm() {
+            const formHtml = `
+                <form id="reportForm">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">نوع البلاغ *</label>
+                            <select class="form-select" name="report_type" required>
+                                <option value="missing">شخص مفقود</option>
+                                <option value="found">شخص تم العثور عليه</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">اسم الشخص *</label>
+                            <input type="text" class="form-control" name="person_name" required>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">العمر</label>
+                            <input type="number" class="form-control" name="age" min="0" max="120">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">الجنس</label>
+                            <select class="form-select" name="gender">
+                                <option value="M">ذكر</option>
+                                <option value="F">أنثى</option>
+                                <option value="U">غير معروف</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">آخر مكان رؤية *</label>
+                            <input type="text" class="form-control" name="last_seen_location" required>
+                        </div>
+                        <div class="col-12 mb-3">
+                            <label class="form-label">ملاحظات إضافية</label>
+                            <textarea class="form-control" name="circumstances" rows="3"></textarea>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">رقم الاتصال *</label>
+                            <input type="tel" class="form-control" name="contact_phone" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">صورة الشخص</label>
+                            <input type="file" class="form-control" name="primary_photo" accept="image/*">
+                        </div>
+                    </div>
+                </form>
+            `;
+
+            showModal('إنشاء بلاغ جديد', formHtml, 'حفظ البلاغ', function () {
+                submitReportForm();
+            });
+        }
+
+        function submitReportForm() {
+            const form = $('#reportForm');
+            if (form[0].checkValidity()) {
+                const formData = new FormData(form[0]);
+
+                showLoading();
+                $.ajax({
+                    url: '/api/reports/',
+                    method: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function () {
+                        hideLoading();
+                        bootstrap.Modal.getInstance(document.getElementById('mainModal')).hide();
+                        showToast('تم إنشاء البلاغ بنجاح', 'success');
+                        loadDashboard();
+                    },
+                    error: function () {
+                        hideLoading();
+                        showToast('خطأ في إنشاء البلاغ', 'error');
+                    }
+                });
+            } else {
+                form[0].reportValidity();
+            }
+        }
+
+        // More functions for other features...
+        function runAutoMatching() {
+            showLoading();
+            $.ajax({
+                url: '/api/matching/config/1/run_matching/',
+                method: 'POST',
+                success: function (data) {
+                    hideLoading();
+                    showToast(`تم تشغيل المطابقة: ${data.total_matches_found} تطابق جديد`, 'success');
+                    loadDashboard();
+                },
+                error: function () {
+                    hideLoading();
+                    showToast('خطأ في تشغيل المطابقة', 'error');
+                }
+            });
+        }
+
+        function verifyUser(userId, accept) {
+            showLoading();
+            $.ajax({
+                url: `/api/accounts/admin/verify/${userId}/`,
+                method: 'POST',
+                data: {
+                    action: accept ? 'accept' : 'reject',
+                    notes: accept ? 'تم التحقق من الهوية' : 'طلب التحقق مرفوض'
+                },
+                success: function () {
+                    hideLoading();
+                    showToast(accept ? 'تم التحقق من المستخدم' : 'تم رفض طلب التحقق', 'success');
+                    loadDashboard();
+                },
+                error: function () {
+                    hideLoading();
+                    showToast('خطأ في معالجة طلب التحقق', 'error');
+                }
+            });
+        }
+
+        function viewReport(reportId) {
+            // Navigate to report details or show modal
+            window.location.href = `/dashboard/reports/${reportId}/`;
+        }
+
+        function changeChartPeriod(period) {
+            showToast('تحديث الرسم البياني: ' + period, 'info');
+            // Logic to update chart data based on period would go here
+            // For now just simulate a refresh
+        }
+
+        function logout() {
+            showLoading();
+            setTimeout(() => {
+                hideLoading();
+                window.location.href = '/admin/logout/';
+            }, 1000);
+        }
+    </script>
+
+    <!-- Page Specific JavaScript -->
+    {% block scripts %}{% endblock %}
+</body>
+
+</html>

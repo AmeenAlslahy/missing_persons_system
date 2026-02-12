@@ -1,0 +1,217 @@
+{% extends 'admin_dashboard/base_dashboard.html' %}
+
+{% block title %}التحليلات المتقدمة | لوحة التحكم{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">التحليلات والتقارير المتقدمة</h4>
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{% url 'admin_dashboard:index' %}">الرئيسية</a></li>
+            <li class="breadcrumb-item active">التحليلات</li>
+        </ol>
+    </nav>
+</div>
+
+<!-- Key Performance Indicators Row -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card border-bottom border-primary">
+            <h6 class="text-muted small fw-bold">إجمالي التقارير</h6>
+            <h3 class="mb-0" id="stat-total-reports">...</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-bottom border-success">
+            <h6 class="text-muted small fw-bold">البلاغات النشطة</h6>
+            <h3 class="mb-0" id="stat-active-reports">...</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-bottom border-info">
+            <h6 class="text-muted small fw-bold">إجمالي المطابقات</h6>
+            <h3 class="mb-0" id="stat-total-matches">...</h3>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-bottom border-warning">
+            <h6 class="text-muted small fw-bold">المستخدمين النشطين</h6>
+            <h3 class="mb-0" id="stat-total-users">...</h3>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-8">
+        <div class="card stat-card h-100">
+            <h5 class="mb-4 fw-bold">تحليل المناطق الجغرافية</h5>
+            <div style="height: 400px;">
+                <canvas id="geoChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card stat-card h-100">
+            <h5 class="mb-4 fw-bold">توزيع موثوقية المستخدمين</h5>
+            <div style="height: 400px;">
+                <canvas id="trustChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="card stat-card h-100">
+            <h5 class="mb-4 fw-bold">الجنس (المفقودين)</h5>
+            <div style="height: 300px;">
+                <canvas id="genderChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card h-100">
+            <h5 class="mb-4 fw-bold">الحالات الصحية</h5>
+            <div style="height: 300px;">
+                <canvas id="healthChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card h-100">
+            <h5 class="mb-4 fw-bold">توزيع الفئات العمرية</h5>
+            <div style="height: 300px;">
+                <canvas id="ageDistributionChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-12">
+        <div class="card stat-card">
+            <h5 class="mb-4 fw-bold">معدل الاستجابة والحل شهرياً</h5>
+            <div style="height: 300px;">
+                <canvas id="responseRateChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        // Load Overall Stats (Trust, Demographics, etc.)
+        $.get('/api/analytics/stats/', function (res) {
+            $('#stat-total-reports').text(res.system.total_reports);
+            $('#stat-active-reports').text(res.system.active_reports);
+            $('#stat-total-matches').text(res.system.total_matches);
+            $('#stat-total-users').text(res.system.total_users);
+
+            // Trust Chart
+            if (res.user_trust) {
+                new Chart(document.getElementById('trustChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: ['ممتازة (90%+)', 'عالية (70-90)', 'متوسطة (40-70)', 'منخفضة (0-40)'],
+                        datasets: [{
+                            label: 'عدد المستخدمين',
+                            data: [res.user_trust.very_high, res.user_trust.high, res.user_trust.medium, res.user_trust.low],
+                            backgroundColor: ['#2ecc71', '#3498db', '#f1c40f', '#e74c3c']
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+
+            // Gender Chart
+            if (res.demographics && res.demographics.gender) {
+                const genderLabels = { 'male': 'ذكر', 'female': 'أنثى', 'other': 'غير محدد' };
+                new Chart(document.getElementById('genderChart'), {
+                    type: 'pie',
+                    data: {
+                        labels: Object.keys(res.demographics.gender).map(k => genderLabels[k] || k),
+                        datasets: [{
+                            data: Object.values(res.demographics.gender),
+                            backgroundColor: ['#3498db', '#e84393', '#95a5a6']
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+
+            // Health Chart
+            if (res.demographics && res.demographics.health_condition) {
+                new Chart(document.getElementById('healthChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: Object.keys(res.demographics.health_condition),
+                        datasets: [{
+                            data: Object.values(res.demographics.health_condition),
+                            backgroundColor: ['#e67e22', '#16a085', '#2980b9', '#8e44ad', '#2c3e50']
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+        });
+
+        // Load Daily Stats & Charts
+        $.get('/api/analytics/dashboard/', function (response) {
+            const stats = response.daily_stats || {};
+            if (stats.top_cities && stats.top_cities.length > 0) {
+                new Chart(document.getElementById('geoChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: stats.top_cities.map(item => item.city),
+                        datasets: [{
+                            label: 'عدد البلاغات',
+                            data: stats.top_cities.map(item => item.count),
+                            backgroundColor: '#3498db'
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y' }
+                });
+            }
+
+            if (stats.reports_by_age_group) {
+                const ageLabels = { 'children': 'أطفال', 'teens': 'يافعين', 'young_adults': 'شباب', 'adults': 'بالغين', 'seniors': 'كبار سن' };
+                new Chart(document.getElementById('ageDistributionChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(stats.reports_by_age_group).map(key => ageLabels[key] || key),
+                        datasets: [{
+                            label: 'توزيع الأعمار',
+                            data: Object.values(stats.reports_by_age_group),
+                            backgroundColor: '#27ae60'
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+        });
+
+        $.get('/api/analytics/daily-stats/', function (response) {
+            if (response.results && response.results.length > 0) {
+                const history = response.results.slice(0, 15).reverse();
+                new Chart(document.getElementById('responseRateChart'), {
+                    type: 'line',
+                    data: {
+                        labels: history.map(item => item.date),
+                        datasets: [{
+                            label: 'معدل نجاح المطابقة (%)',
+                            data: history.map(item => item.match_success_rate || 0),
+                            borderColor: '#2ecc71',
+                            fill: true,
+                            tension: 0.4,
+                            backgroundColor: 'rgba(46, 204, 113, 0.1)'
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+        });
+    });
+</script>
+{% endblock %}

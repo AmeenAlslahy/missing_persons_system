@@ -1,0 +1,430 @@
+{% extends 'base.html' %}
+
+{% block title %}إدارة البلاغات - نظام البحث عن المفقودين{% endblock %}
+
+{% block content %}
+<div class="fade-in">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="mb-1">إدارة البلاغات</h4>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="#" onclick="loadDashboard()">الرئيسية</a></li>
+                    <li class="breadcrumb-item active">البلاغات</li>
+                </ol>
+            </nav>
+        </div>
+        <div>
+            <button class="btn btn-primary" onclick="showReportForm()">
+                <i class="fas fa-plus-circle me-2"></i>بلاغ جديد
+            </button>
+            <button class="btn btn-outline-secondary ms-2" onclick="exportData('reports')">
+                <i class="fas fa-file-export me-2"></i>تصدير
+            </button>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-header bg-white">
+            <div class="d-flex align-items-center justify-content-between">
+                <h6 class="mb-0"><i class="fas fa-filter me-2"></i>تصفية البحث</h6>
+                <button class="btn btn-sm btn-link text-decoration-none" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#filterCollapse">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+            </div>
+        </div>
+        <div class="collapse show" id="filterCollapse">
+            <div class="card-body">
+                <form id="filterForm" class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">البحث</label>
+                        <input type="text" class="form-control" id="searchFilter" placeholder="الاسم، رقم البلاغ...">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">نوع البلاغ</label>
+                        <select class="form-select" id="typeFilter">
+                            <option value="">الكل</option>
+                            <option value="missing">مفقود</option>
+                            <option value="found">معثور عليه</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">الحالة</label>
+                        <select class="form-select" id="statusFilter">
+                            <option value="">الكل</option>
+                            <option value="pending">قيد المراجعة</option>
+                            <option value="active">نشط</option>
+                            <option value="resolved">محلول</option>
+                            <option value="closed">مغلق</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">الفترة الزمنية</label>
+                        <select class="form-select" id="dateFilter">
+                            <option value="">كل الأوقات</option>
+                            <option value="today">اليوم</option>
+                            <option value="week">آخر أسبوع</option>
+                            <option value="month">آخر شهر</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white text-center p-3">
+                <h3 id="totalReportsCount">0</h3>
+                <small>إجمالي البلاغات</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white text-center p-3">
+                <h3 id="pendingReportsCount">0</h3>
+                <small>قيد المراجعة</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white text-center p-3">
+                <h3 id="resolvedReportsCount">0</h3>
+                <small>تم الحل</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white text-center p-3">
+                <h3 id="activeReportsCount">0</h3>
+                <small>بلاغات نشطة</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reports Table -->
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table id="reportsTable" class="table table-hover align-middle w-100">
+                    <thead>
+                        <tr>
+                            <th>رقم البلاغ</th>
+                            <th>الصورة</th>
+                            <th>الاسم</th>
+                            <th>النوع</th>
+                            <th>العمر</th>
+                            <th>الموقع</th>
+                            <th>تاريخ البلاغ</th>
+                            <th>الحالة</th>
+                            <th>إجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Data loaded via Ajax -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Report Details Modal -->
+<div class="modal fade" id="reportDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">تفاصيل البلاغ #<span id="detailsReportCode"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <!-- Photo & Basic Info -->
+                    <div class="col-md-4 text-center border-end">
+                        <img id="detailsPhoto" src="/static/images/placeholder.jpg"
+                            class="img-fluid rounded shadow mb-3" style="max-height: 300px;">
+                        <h4 id="detailsName" class="mb-2"></h4>
+                        <div id="detailsStatus" class="mb-3"></div>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-outline-primary" onclick="findMatchesFromDetails()">
+                                <i class="fas fa-search me-2"></i>بحث عن تطابق
+                            </button>
+                            <button class="btn btn-outline-success" onclick="contactReporter()">
+                                <i class="fas fa-phone me-2"></i>تواصل مع المبلغ
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Details -->
+                    <div class="col-md-8">
+                        <ul class="nav nav-tabs mb-3" role="tablist">
+                            <li class="nav-item">
+                                <a class="nav-link active" data-bs-toggle="tab" href="#info">المعلومات الأساسية</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" data-bs-toggle="tab" href="#matches">المطابقات المحتملة</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" data-bs-toggle="tab" href="#timeline">سجل النشاط</a>
+                            </li>
+                        </ul>
+
+                        <div class="tab-content">
+                            <!-- Basic Info Tab -->
+                            <div class="tab-pane fade show active" id="info">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="text-muted small">نوع البلاغ</label>
+                                        <p id="detailsType" class="fw-bold fs-5"></p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="text-muted small">تاريخ البلاغ</label>
+                                        <p id="detailsDate" class="fw-bold"></p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="text-muted small">العمر</label>
+                                        <p id="detailsAge" class="fw-bold"></p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="text-muted small">الجنس</label>
+                                        <p id="detailsGender" class="fw-bold"></p>
+                                    </div>
+                                    <div class="col-md-12">
+                                        <label class="text-muted small">الموقع</label>
+                                        <p id="detailsLocation" class="fw-bold"></p>
+                                    </div>
+                                    <div class="col-md-12">
+                                        <label class="text-muted small">الظروف / ملاحظات</label>
+                                        <p id="detailsNotes" class="bg-light p-3 rounded"></p>
+                                    </div>
+                                    <div class="col-md-12">
+                                        <h6 class="border-bottom pb-2 mt-2">معلومات المبلغ</h6>
+                                        <p id="reporterInfo"></p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Matches Tab -->
+                            <div class="tab-pane fade" id="matches">
+                                <div id="matchesList" class="list-group">
+                                    <!-- Matches loaded via JS -->
+                                    <div class="text-center p-4">
+                                        <div class="spinner-border text-primary" role="status"></div>
+                                        <p>جاري البحث عن مطابقات...</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Timeline Tab -->
+                            <div class="tab-pane fade" id="timeline">
+                                <div class="timeline p-3">
+                                    <!-- Audit logs loaded via JS -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <div>
+                    <button class="btn btn-danger" onclick="updateReportStatus('rejected')">رفض البلاغ</button>
+                    <button class="btn btn-warning" onclick="updateReportStatus('closed')">إغلاق</button>
+                </div>
+                <div>
+                    <button class="btn btn-success" onclick="updateReportStatus('active')">تنشيط البلاغ</button>
+                    <button class="btn btn-primary" onclick="updateReportStatus('resolved')">تحديد كمحلول</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let reportsTable;
+    let currentReportId = null;
+
+    $(document).ready(function () {
+        initTable();
+        loadStats();
+
+        // Filter listeners
+        $('#searchFilter, #typeFilter, #statusFilter, #dateFilter').on('change keyup', function () {
+            reportsTable.ajax.reload();
+        });
+    });
+
+    function initTable() {
+        reportsTable = $('#reportsTable').DataTable({
+            language: {
+                url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/ar.json'
+            },
+            serverSide: true,
+            processing: true,
+            ajax: {
+                url: '/api/reports/',
+                data: function (d) {
+                    d.search = $('#searchFilter').val();
+                    d.report_type = $('#typeFilter').val();
+                    d.status = $('#statusFilter').val();
+                    d.date_range = $('#dateFilter').val();
+                    // Map DataTable parameters to DRF params
+                    d.page = (d.start / d.length) + 1;
+                    d.page_size = d.length;
+                    d.ordering = d.columns[d.order[0].column].data;
+                    if (d.order[0].dir === 'desc') d.ordering = '-' + d.ordering;
+                },
+                dataSrc: function (json) {
+                    json.recordsTotal = json.count;
+                    json.recordsFiltered = json.count;
+                    return json.results;
+                }
+            },
+            columns: [
+                { data: 'report_code', render: function (data) { return '<strong>' + data + '</strong>'; } },
+                {
+                    data: 'primary_photo',
+                    render: function (data) {
+                        return data ? `<img src="${data}" class="rounded-circle" width="40" height="40" style="object-fit: cover;">`
+                            : '<div class="avatar avatar-sm bg-secondary text-white rounded-circle d-flex align-items-center justify-content-center" style="width:40px;height:40px;"><i class="fas fa-user"></i></div>';
+                    },
+                    orderable: false
+                },
+                { data: 'person_name' },
+                {
+                    data: 'report_type',
+                    render: function (data) {
+                        return data === 'missing' ?
+                            '<span class="badge bg-danger">مفقود</span>' :
+                            '<span class="badge bg-success">معثور عليه</span>';
+                    }
+                },
+                { data: 'age' },
+                { data: 'last_seen_location' },
+                {
+                    data: 'created_at',
+                    render: function (data) {
+                        return new Date(data).toLocaleDateString('ar-SA');
+                    }
+                },
+                {
+                    data: 'status',
+                    render: function (data) {
+                        return getStatusBadge(data); // Using global function from base.html
+                    }
+                },
+                {
+                    data: 'report_id',
+                    render: function (data) {
+                        return `
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary" onclick="viewReport('${data}')" title="عرض التفاصيل"><i class="fas fa-eye"></i></button>
+                                <button class="btn btn-outline-secondary" onclick="editReport('${data}')" title="تعديل"><i class="fas fa-edit"></i></button>
+                            </div>
+                        `;
+                    },
+                    orderable: false
+                }
+            ],
+            order: [[6, 'desc']] // Sort by date by default
+        });
+    }
+
+    function loadStats() {
+        $.ajax({
+            url: '/api/reports/statistics/',
+            success: function (data) {
+                $('#totalReportsCount').text(data.total_reports || 0);
+                $('#pendingReportsCount').text(data.status_breakdown?.pending || 0);
+                $('#resolvedReportsCount').text(data.status_breakdown?.resolved || 0);
+                $('#activeReportsCount').text(data.status_breakdown?.active || 0);
+            }
+        });
+    }
+
+    function viewReport(id) {
+        currentReportId = id;
+        showLoading();
+
+        $.ajax({
+            url: `/api/reports/${id}/`,
+            success: function (data) {
+                populateReportModal(data);
+                const modal = new bootstrap.Modal(document.getElementById('reportDetailsModal'));
+                modal.show();
+                hideLoading();
+
+                // Load related data tabs
+                loadReportMatches(id);
+                // loadReportAuditLog(id);
+            },
+            error: function () {
+                hideLoading();
+                showToast('خطأ في تحميل تفاصيل البلاغ', 'error');
+            }
+        });
+    }
+
+    function populateReportModal(data) {
+        $('#detailsReportCode').text(data.report_code);
+        $('#detailsName').text(data.person_name);
+        $('#detailsStatus').html(getStatusBadge(data.status));
+        $('#detailsPhoto').attr('src', data.primary_photo || '/static/images/placeholder.jpg');
+
+        $('#detailsType').text(data.report_type === 'missing' ? 'شخص مفقود' : 'شخص معثور عليه');
+        $('#detailsDate').text(new Date(data.created_at).toLocaleDateString('ar-SA'));
+        $('#detailsAge').text(data.age || 'غير محدد');
+        $('#detailsGender').text(data.gender === 'M' ? 'ذكر' : (data.gender === 'F' ? 'أنثى' : 'غير معروف'));
+        $('#detailsLocation').text(data.last_seen_location);
+        $('#detailsNotes').text(data.circumstances || 'لا توجد ملاحظات إضافية');
+
+        $('#reporterInfo').html(`
+            <strong>المبلغ:</strong> ${data.reporter_name || 'غير معروف'}<br>
+            <strong>رقم الهاتف:</strong> ${data.contact_phone}<br>
+            <strong>البريد الإلكتروني:</strong> ${data.reporter_email || '-'}
+        `);
+    }
+
+    function updateReportStatus(newStatus) {
+        if (!currentReportId) return;
+
+        if (!confirm('هل أنت متأكد من تغيير حالة البلاغ؟')) return;
+
+        const actionMap = {
+            'active': 'verify',    // Assuming verify transition updates to active
+            'rejected': 'reject',
+            'resolved': 'resolve',
+            'closed': 'close'
+        };
+
+        // Note: The backend endpoint might differ, adjusting to standard REST update
+        // or a specific action endpoint if your ViewSet defines @action routes
+
+        showLoading();
+        $.ajax({
+            url: `/api/reports/${currentReportId}/`,
+            method: 'PATCH',
+            data: { status: newStatus },
+            success: function () {
+                hideLoading();
+                bootstrap.Modal.getInstance(document.getElementById('reportDetailsModal')).hide();
+                showToast('تم تحديث حالة البلاغ بنجاح', 'success');
+                reportsTable.ajax.reload();
+                loadStats();
+            },
+            error: function () {
+                hideLoading();
+                showToast('خطأ في تحديث الحالة', 'error');
+            }
+        });
+    }
+
+    function loadReportMatches(reportId) {
+        // Implement matches loading logic
+        $('#matchesList').html('<div class="p-3 text-center text-muted">لا توجد مطابقات حالياً</div>');
+    }
+</script>
+{% endblock %}

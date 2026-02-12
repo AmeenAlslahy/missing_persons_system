@@ -1,0 +1,109 @@
+{% extends 'admin_dashboard/base_dashboard.html' %}
+
+{% block title %}سجل العمليات | لوحة التحكم{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">سجل العمليات (Audit Log)</h4>
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{% url 'admin_dashboard:index' %}">الرئيسية</a></li>
+            <li class="breadcrumb-item active">سجل العمليات</li>
+        </ol>
+    </nav>
+</div>
+
+<div class="card stat-card mb-4">
+    <div class="card-body">
+        <form id="audit-filter" class="row g-3">
+            <div class="col-md-5">
+                <input type="text" name="search" class="form-control"
+                    placeholder="بحث في التفاصيل، المستخدم، الآي بي...">
+            </div>
+            <div class="col-md-3">
+                <select name="action_type" class="form-select">
+                    <option value="">كل أنواع العمليات</option>
+                    <option value="LOGIN">دخول</option>
+                    <option value="REGISTER">تسجيل</option>
+                    <option value="ADMIN_BLOCK">حظر مشرف</option>
+                    <option value="REVIEW_ACCEPT">قبول بلاغ</option>
+                    <option value="REVIEW_REJECT">رفض بلاغ</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">بحث</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card stat-card">
+    <div class="table-responsive">
+        <table class="table table-hover small">
+            <thead class="bg-light">
+                <tr>
+                    <th>الوقت</th>
+                    <th>المستخدم</th>
+                    <th>نوع العملية</th>
+                    <th>التفاصيل</th>
+                    <th>IP / المتصفح</th>
+                </tr>
+            </thead>
+            <tbody id="audit-table-body">
+                <!-- Data via AJAX -->
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer bg-white border-0 text-center">
+        <button id="load-more-btn" class="btn btn-sm btn-outline-secondary px-4">تحميل المزيد</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        let nextPage = 1;
+
+        function loadLogs(page = 1, append = false) {
+            let formData = $('#audit-filter').serialize();
+            $.ajax({
+                url: `/api/accounts/audit-logs/?page=${page}&${formData}`,
+                method: 'GET',
+                success: function (response) {
+                    renderLogs(response.results, append);
+                    nextPage = response.next ? page + 1 : null;
+                    if (!nextPage) $('#load-more-btn').hide(); else $('#load-more-btn').show();
+                }
+            });
+        }
+
+        function renderLogs(logs, append) {
+            let html = '';
+            logs.forEach(log => {
+                html += `
+                <tr>
+                    <td class="text-nowrap">${new Date(log.created_at).toLocaleString('ar-SA')}</td>
+                    <td><strong>${log.user_full_name || '---'}</strong><br><small class="text-muted">${log.user || ''}</small></td>
+                    <td><span class="badge bg-secondary font-monospace">${log.action_type}</span></td>
+                    <td>${log.action_details}</td>
+                    <td><small>${log.ip_address}<br>${log.user_agent ? log.user_agent.substring(0, 30) + '...' : ''}</small></td>
+                </tr>
+            `;
+            });
+            if (append) $('#audit-table-body').append(html); else $('#audit-table-body').html(html || '<tr><td colspan="5" class="text-center">لا توجد سجلات</td></tr>');
+        }
+
+        $('#load-more-btn').click(function () {
+            if (nextPage) loadLogs(nextPage, true);
+        });
+
+        $('#audit-filter').submit(function (e) {
+            e.preventDefault();
+            loadLogs(1, false);
+        });
+
+        loadLogs();
+    });
+</script>
+{% endblock %}

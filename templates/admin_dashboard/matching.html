@@ -1,0 +1,596 @@
+{% extends 'admin_dashboard/base_dashboard.html' %}
+
+{% block title %}إدارة المطابقات الذكية | لوحة التحكم{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="mb-0 fw-bold text-primary">إدارة المطابقات الذكية</h4>
+        <p class="text-muted small mb-0">مراجعة وتأكيد نتائج البحث السحابي المعتمدة على الذكاء الاصطناعي</p>
+    </div>
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{% url 'admin_dashboard:index' %}">الرئيسية</a></li>
+            <li class="breadcrumb-item active">سجل المطابقات</li>
+        </ol>
+    </nav>
+</div>
+
+<!-- Quick Statistics & Filters -->
+<div class="row mb-4 g-3">
+    <div class="col-md-9">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-3">
+                <form id="matches-filter-form" class="row g-2 align-items-center">
+                    <div class="col-md-4">
+                        <div class="input-group">
+                            <span class="input-group-text bg-light border-0"><i
+                                    class="fas fa-search text-muted"></i></span>
+                            <input type="text" name="search" class="form-control border-0 bg-light"
+                                placeholder="بحث بالاسم أو الكود...">
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <select name="match_status" class="form-select border-0 bg-light">
+                            <option value="">كل الحالات</option>
+                            <option value="pending" selected>بانتظار المراجعة</option>
+                            <option value="accepted">تم التأكيد</option>
+                            <option value="rejected">مرفوض</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select name="priority_level" class="form-select border-0 bg-light">
+                            <option value="">كل الأولويات</option>
+                            <option value="urgent">عاجل (أطفال/مسنين)</option>
+                            <option value="high">مرتفع</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="input-group">
+                            <span class="input-group-text small border-0 bg-transparent text-muted">تشابه %</span>
+                            <input type="number" name="similarity_score__gte"
+                                class="form-control border-0 bg-light text-center" value="30" min="0" max="100">
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary w-100 shadow-sm"><i class="fas fa-filter me-1"></i>
+                            فلترة</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-primary text-white shadow-sm h-100">
+            <div class="card-body d-flex align-items-center justify-content-between">
+                <div>
+                    <h6 class="mb-1 opacity-75">بانتظار المراجعة</h6>
+                    <h3 class="mb-0 fw-bold" id="pending-count">0</h3>
+                </div>
+                <div class="fs-1 opacity-25">
+                    <i class="fas fa-tasks"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Matches Queue Table -->
+<div class="card border-0 shadow-sm overflow-hidden">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" id="matches-table">
+            <thead class="bg-light text-muted small text-uppercase">
+                <tr>
+                    <th class="px-4">رقم التطابق</th>
+                    <th>الأطراف (مفقود ↔ معثور)</th>
+                    <th>النوع</th>
+                    <th>نسبة التشابه</th>
+                    <th>الثقة / الأولوية</th>
+                    <th>الحالة</th>
+                    <th class="text-center">الإجراء</th>
+                </tr>
+            </thead>
+            <tbody id="matches-list">
+                <!-- Data loaded via JS -->
+                <tr>
+                    <td colspan="7" class="text-center py-5">
+                        <div class="spinner-border text-primary spinner-border-sm me-2"></div> جاري تحميل سجل
+                        التطابقات...
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Side-by-Side Comparison Modal -->
+<div class="modal fade" id="matchCompareModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-dark text-white border-0 py-3">
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-shield-alt fs-4 me-3 text-warning"></i>
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0">مركز التحقق والمطابقة السحابية</h5>
+                        <small class="opacity-75" id="modal-match-id">Match ID: Loading...</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body p-0 bg-light">
+                <!-- Comparison Section -->
+                <div class="container-fluid p-4">
+                    <div class="row g-4 mb-4">
+                        <!-- Missing Report Card -->
+                        <div class="col-md-5">
+                            <div class="card h-100 border-0 shadow-sm overflow-hidden rounded-4">
+                                <div class="bg-primary text-white text-center py-2 fw-bold small">بلاغ المفقود (Missing)
+                                </div>
+                                <div class="position-relative">
+                                    <img id="orig-img" src="" class="card-img-top"
+                                        style="height: 400px; object-fit: cover; cursor: zoom-in;">
+                                    <div class="position-absolute bottom-0 end-0 p-2">
+                                        <span class="badge bg-dark bg-opacity-50 rounded-pill"
+                                            id="orig-id-badge"></span>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <div id="orig-info"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Match Evidence Center -->
+                        <div class="col-md-2 d-flex flex-column align-items-center justify-content-center">
+                            <div class="text-center mb-4">
+                                <div id="match-score-circle"
+                                    class="rounded-circle d-flex flex-column align-items-center justify-content-center mx-auto mb-2 shadow-sm"
+                                    style="width: 130px; height: 130px; border: 10px solid #eee; background: #fff;">
+                                    <span class="fs-4 fw-bold" id="score-val">--%</span>
+                                    <small class="text-muted" style="font-size: 0.7rem;">تشابه وجه</small>
+                                </div>
+                                <div id="confidence-badge" class="badge rounded-pill mb-2">ثقة متوسطة</div>
+                                <div id="priority-badge" class="badge rounded-pill">أولوية عادية</div>
+                            </div>
+
+                            <div class="w-100 text-center px-2">
+                                <div class="small fw-bold text-primary mb-2 mt-4"><i class="fas fa-robot me-1"></i>
+                                    لماذا هذا التطابق؟</div>
+                                <div id="match-reason-box"
+                                    class="small p-3 rounded-4 bg-white border border-primary border-opacity-25 shadow-sm text-start"
+                                    style="font-size: 0.8rem; min-height: 80px;">
+                                    جاري تحليل الأدلة...
+                                </div>
+                                <div class="mt-3 small text-muted">
+                                    Model: <span id="model-ver" class="fw-bold">--</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Found Report Card -->
+                        <div class="col-md-5">
+                            <div class="card h-100 border-0 shadow-sm overflow-hidden rounded-4">
+                                <div class="bg-success text-white text-center py-2 fw-bold small">بلاغ المعثور عليه
+                                    (Found)</div>
+                                <div class="position-relative">
+                                    <img id="match-img" src="" class="card-img-top"
+                                        style="height: 400px; object-fit: cover; cursor: zoom-in;">
+                                    <div class="position-absolute bottom-0 end-0 p-2">
+                                        <span class="badge bg-dark bg-opacity-50 rounded-pill"
+                                            id="match-id-badge"></span>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <div id="match-info"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Comparison Table -->
+                    <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
+                        <div class="card-header bg-white py-3 fw-bold"><i
+                                class="fas fa-layer-group me-2 text-primary"></i>مقارنة البيانات النصية والجسدية</div>
+                        <div class="card-body p-0">
+                            <table class="table table-bordered mb-0 text-center small align-middle">
+                                <thead class="bg-light">
+                                    <tr>
+                                        <th style="width: 40%">بيانات المفقود</th>
+                                        <th style="width: 20%">المعيار</th>
+                                        <th style="width: 40%">بيانات المعثور عليه</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="data-comparison-body">
+                                    <!-- Populated via JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Contact Info (Revealed after acceptance) -->
+                    <div id="contact-info-section"
+                        class="card border-primary border-opacity-50 shadow-sm rounded-4 mb-4 d-none">
+                        <div class="card-body bg-primary bg-opacity-10 py-4 text-center">
+                            <h6 class="fw-bold text-primary mb-3"><i class="fas fa-address-card me-2"></i>معلومات
+                                الاتصال المباشر (تم تأكيد التطابق)</h6>
+                            <div class="row g-4">
+                                <div class="col-md-6 border-end">
+                                    <p class="mb-1 fw-bold">جهة بلاغ المفقود</p>
+                                    <div id="missing-contact-details" class="fs-5 fw-bold text-dark"></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <p class="mb-1 fw-bold">جهة بلاغ المعثور عليه</p>
+                                    <div id="found-contact-details" class="fs-5 fw-bold text-dark"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Review Details (Visible if reviewed) -->
+                    <div id="review-details-section" class="card border-0 shadow-sm rounded-4 mb-4 bg-light d-none">
+                        <div class="card-body">
+                            <h6 class="fw-bold mb-3 text-secondary"><i class="fas fa-clipboard-check me-2"></i>تفاصيل
+                                المراجعة</h6>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div>
+                                    <span class="text-muted small">تمت المراجعة بواسطة:</span>
+                                    <span id="reviewer-name" class="fw-bold text-dark ms-1">--</span>
+                                </div>
+                                <div>
+                                    <span class="text-muted small">التاريخ:</span>
+                                    <span id="review-date" class="fw-bold text-dark ms-1">--</span>
+                                </div>
+                            </div>
+                            <div class="p-3 bg-white rounded border border-light">
+                                <span class="text-muted small d-block mb-1">ملاحظات القرار:</span>
+                                <p id="review-notes-display" class="mb-0 text-dark small">--</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action/Decision Area -->
+                    <div class="card border-0 shadow-lg rounded-4 overflow-hidden" id="governance-area">
+                        <div class="card-body p-4 bg-white">
+                            <h6 class="fw-bold mb-3"><i class="fas fa-gavel me-2"></i>اتخاذ قرار نهائي كمسؤول نظام</h6>
+                            <textarea id="review-notes" class="form-control border-light-dark mb-4 p-3" rows="3"
+                                placeholder="أدخل سبب القرار بالتفصيل (متطلب إلزامي للحوكمة)..."></textarea>
+
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-danger btn-lg flex-grow-1 fw-bold"
+                                            onclick="updateMatchStatus('reject')">
+                                            <i class="fas fa-times-circle me-1"></i> رفض التطابق
+                                        </button>
+                                        <button class="btn btn-outline-danger btn-lg"
+                                            onclick="updateMatchStatus('false_positive')"
+                                            title="تطابق إيجابي خاطئ خوارزمياً">
+                                            FP
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <button class="btn btn-success btn-lg w-100 fw-bold shadow"
+                                        onclick="updateMatchStatus('accept')">
+                                        <i class="fas fa-check-double me-1"></i> تأكيد التطابق الكلي والحل
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer bg-light border-0">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق المعالجة</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        let activeMatchId = null;
+
+        function loadMatches(params = {}) {
+            params.match_status = params.match_status || 'pending';
+            $.ajax({
+                url: '/api/matching/matches/',
+                method: 'GET',
+                data: params,
+                success: function (response) {
+                    renderMatches(response.results);
+                    // Update pending count if we filtered for pending
+                    if (params.match_status === 'pending') {
+                        $('#pending-count').text(response.count);
+                    }
+                }
+            });
+        }
+
+        $('#matches-filter-form').on('submit', function (e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const params = {};
+            formData.forEach((value, key) => {
+                if (value) {
+                    if (key === 'similarity_score__gte') params[key] = parseFloat(value) / 100;
+                    else params[key] = value;
+                }
+            });
+            loadMatches(params);
+        });
+
+        function renderMatches(results) {
+            let html = '';
+            results.forEach(m => {
+                const statusBadge = getStatusBadge(m.match_status);
+                const confidenceClass = getConfidenceClass(m.confidence_level);
+                const priorityBadge = getPriorityBadge(m.priority_level);
+                const matchType = m.match_type === 'auto' ? '<i class="fas fa-robot text-primary me-1" title="AI"></i> تلقائي' : '<i class="fas fa-user-edit text-info me-1" title="Manual"></i> يدوي';
+
+                html += `
+                <tr class="${m.priority_level === 'urgent' ? 'bg-light-danger' : ''}">
+                    <td class="px-4 fw-bold small text-muted">ID-${m.id}</td>
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <div class="avatar-group me-3">
+                                <img src="${m.missing_report_image || '/static/images/placeholder.png'}" class="rounded-circle shadow-sm" width="35" height="35" style="object-fit: cover;">
+                                <img src="${m.found_report_image || '/static/images/placeholder.png'}" class="rounded-circle shadow-sm" width="35" height="35" style="object-fit: cover; margin-left: -10px;">
+                            </div>
+                            <div>
+                                <div class="fw-bold">${m.missing_person_name} ↔ ${m.found_person_name}</div>
+                                <div class="small text-muted">${m.missing_report_code} | ${m.found_report_code}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="small">${matchType}</td>
+                    <td>
+                        <div class="progress" style="height: 6px; width: 80px;">
+                            <div class="progress-bar ${getScoreColor(m.similarity_score * 100)}" style="width: ${m.similarity_score * 100}%"></div>
+                        </div>
+                        <small class="fw-bold">${Math.round(m.similarity_score * 100)}%</small>
+                    </td>
+                    <td>
+                        <div class="mb-1">${confidenceClass}</div>
+                        ${priorityBadge}
+                    </td>
+                    <td>${statusBadge}</td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-white border shadow-sm px-3" onclick="viewMatch(${m.id})">مراجعة</button>
+                    </td>
+                </tr>
+                `;
+            });
+            $('#matches-list').html(html || '<tr><td colspan="7" class="text-center py-5">لا توجد سجلات مطابقة حالياً بالمعايير المختارة</td></tr>');
+        }
+
+        window.viewMatch = function (matchId) {
+            activeMatchId = matchId;
+            $.ajax({
+                url: `/api/matching/matches/${matchId}/`,
+                method: 'GET',
+                success: function (m) {
+                    $('#modal-match-id').text(`Match ID: ${m.id} | Detected at: ${new Date(m.detected_at).toLocaleString('ar-SA')}`);
+                    $('#orig-img').attr('src', m.missing_report_image || '/static/images/placeholder.png');
+                    $('#match-img').attr('src', m.found_report_image || '/static/images/placeholder.png');
+                    $('#orig-id-badge').text(m.missing_report_code);
+                    $('#match-id-badge').text(m.found_report_code);
+
+                    const score = Math.round(m.similarity_score * 100);
+                    $('#score-val').text(score + '%');
+                    $('#match-score-circle').css('border-color', getScoreHexColor(score));
+
+                    $('#confidence-badge').text(getConfidenceText(m.confidence_level)).attr('class', 'badge rounded-pill mb-2 ' + getConfidenceBadgeClass(m.confidence_level));
+                    $('#priority-badge').text(getPriorityText(m.priority_level)).attr('class', 'badge rounded-pill ' + getPriorityBadgeClass(m.priority_level));
+
+                    const details = m.match_details?.hybrid_details || {};
+                    $('#model-ver').text(m.match_details?.matching_version || 'v2.0');
+                    $('#match-reason-box').html(details.explanation || 'تم الاكتشاف بناءً على التقارب في البيانات العامة مدموجاً بالتعرف على الوجه.');
+
+                    // Comparison Header Info
+                    $('#orig-info').html(`<h5 class="fw-bold mb-1">${m.missing_person_name}</h5><p class="text-muted small mb-0">${m.missing_report_code}</p>`);
+                    $('#match-info').html(`<h5 class="fw-bold mb-1">${m.found_person_name}</h5><p class="text-muted small mb-0">${m.found_report_code}</p>`);
+
+                    // Populate Data Comparison
+                    populateComparisonTable(m);
+
+                    // Handle contact reveal
+                    if (m.match_status === 'accepted' && m.contact_info) {
+                        $('#contact-info-section').removeClass('d-none');
+                        $('#missing-contact-details').html(`<i class="fas fa-phone me-2"></i>${m.contact_info.missing_phone} <br> <i class="fas fa-envelope me-2 small"></i>${m.contact_info.missing_email || 'لا يوجد'}`);
+                        $('#found-contact-details').html(`<i class="fas fa-phone me-2"></i>${m.contact_info.found_phone} <br> <i class="fas fa-envelope me-2 small"></i>${m.contact_info.found_email || 'لا يوجد'}`);
+                    } else {
+                        $('#contact-info-section').addClass('d-none');
+                    }
+
+                    // Handle Review Details & Governance
+                    if (['accepted', 'rejected', 'false_positive'].includes(m.match_status)) {
+                        $('#review-details-section').removeClass('d-none');
+                        $('#reviewer-name').text(m.reviewed_by_name || 'غير متوفر');
+                        $('#review-date').text(m.reviewed_at ? new Date(m.reviewed_at).toLocaleString('ar-SA') : 'غير متوفر');
+                        $('#review-notes-display').text(m.review_notes || 'لا توجد ملاحظات');
+
+                        // Hide governance area for decided matches to prevent accidental changes
+                        $('#governance-area').addClass('d-none');
+                    } else {
+                        $('#review-details-section').addClass('d-none');
+                        $('#governance-area').removeClass('d-none');
+                        $('#review-notes').val(m.review_notes || '');
+                    }
+
+                    $('#matchCompareModal').modal('show');
+                }
+            });
+        };
+
+        function populateComparisonTable(m) {
+            const missing = m.missing_details || {}; // Assume these are simplified or use direct report fields if serialized
+            const found = m.found_details || {};
+
+            // In a real app, you'd serialize the report objects fully. 
+            // Here we'll simulate or use keys from the response if available.
+            // For this demo, let's use what we know is in MatchResult
+
+            const rows = [
+                { label: 'الاسم الكامل', val1: m.missing_person_name, val2: m.found_person_name },
+                { label: 'العمر التقريبي', val1: m.missing_report_age || 'غير محدد', val2: m.found_report_age || 'غير محدد' },
+                { label: 'الجنس', val1: m.missing_report_gender === 'M' ? 'ذكر' : 'أنثى', val2: m.found_report_gender === 'M' ? 'ذكر' : 'أنثى' },
+                { label: 'المنطقة', val1: m.missing_report_city || 'غير محدد', val2: m.found_report_city || 'غير محدد' },
+            ];
+
+            let html = '';
+            rows.forEach(row => {
+                const isMatch = row.val1 === row.val2;
+                html += `
+                <tr>
+                    <td>${row.val1}</td>
+                    <td class="bg-light fw-bold">${row.label}</td>
+                    <td class="${isMatch ? 'text-success fw-bold' : ''}">${row.val2} ${isMatch ? '<i class="fas fa-check-circle ms-1"></i>' : ''}</td>
+                </tr>
+                `;
+            });
+            $('#data-comparison-body').html(html);
+        }
+
+        window.updateMatchStatus = function (status) {
+            if (!activeMatchId) return;
+            const notes = $('#review-notes').val();
+
+            if (!notes || notes.length < 5) {
+                alert('عذراً، يجب كتابة سبب القرار (5 أحرف على الأقل) لإتمام العملية لأغراض التدقيق والحوكمة.');
+                return;
+            }
+
+            $.ajax({
+                url: `/api/matching/matches/${activeMatchId}/review/`,
+                method: 'POST',
+                data: JSON.stringify({ decision: status, notes: notes }),
+                contentType: 'application/json',
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+                success: function (res) {
+                    $('#matchCompareModal').modal('hide');
+                    loadMatches();
+                    Toast.fire({ icon: 'success', title: res.message || 'تم اتخاذ القرار بنجاح' });
+                },
+                error: function (xhr) {
+                    alert('خطأ في العملية: ' + (xhr.responseJSON?.message || xhr.responseJSON?.error || 'غير معروف'));
+                }
+            });
+        };
+
+        // Utility Helpers
+        function getStatusBadge(s) {
+            if (s === 'pending') return '<span class="badge bg-soft-warning text-warning fw-bold px-3">بانتظار المراجعة</span>';
+            if (s === 'accepted') return '<span class="badge bg-soft-success text-success fw-bold px-3">تم التأكيد</span>';
+            if (s === 'rejected') return '<span class="badge bg-soft-danger text-danger fw-bold px-3">مرفوض</span>';
+            return `<span class="badge bg-light text-muted">${s}</span>`;
+        }
+
+        function getScoreColor(val) {
+            if (val > 80) return 'bg-success';
+            if (val > 50) return 'bg-warning';
+            return 'bg-danger';
+        }
+
+        function getScoreHexColor(val) {
+            if (val > 80) return '#2ecc71';
+            if (val > 50) return '#f1c40f';
+            return '#e74c3c';
+        }
+
+        function getConfidenceClass(lvl) {
+            const classes = {
+                'very_high': '<span class="text-success small fw-bold"><i class="fas fa-shield-check me-1"></i>ثقة فائقة</span>',
+                'high': '<span class="text-success small fw-bold"><i class="fas fa-check-circle me-1"></i>ثقة عالية</span>',
+                'medium': '<span class="text-warning small fw-bold"><i class="fas fa-info-circle me-1"></i>ثقة متوسطة</span>',
+                'low': '<span class="text-danger small fw-bold"><i class="fas fa-exclamation-triangle me-1"></i>ثقة منخفضة</span>'
+            };
+            return classes[lvl] || lvl;
+        }
+
+        function getPriorityBadge(p) {
+            if (p === 'urgent') return '<span class="badge bg-danger rounded-pill shadow-xs" style="font-size: 0.65rem;">عاجل (أطفال)</span>';
+            if (p === 'high') return '<span class="badge bg-warning text-dark rounded-pill shadow-xs" style="font-size: 0.65rem;">مرتفع</span>';
+            return '<span class="badge bg-light text-muted rounded-pill shadow-xs" style="font-size: 0.65rem;">عادي</span>';
+        }
+
+        function getConfidenceText(l) {
+            const map = { 'very_high': 'ثقة فائقة', 'high': 'ثقة عالية', 'medium': 'ثقة متوسطة', 'low': 'ثقة منخفضة' };
+            return map[l] || l;
+        }
+
+        function getConfidenceBadgeClass(l) {
+            if (l === 'very_high' || l === 'high') return 'bg-success';
+            if (l === 'medium') return 'bg-warning text-dark';
+            return 'bg-danger';
+        }
+
+        function getPriorityText(p) {
+            const map = { 'urgent': 'أولوية عاجلة', 'high': 'أولوية مرتفعة', 'normal': 'أولوية عادية' };
+            return map[p] || p;
+        }
+
+        function getPriorityBadgeClass(p) {
+            if (p === 'urgent') return 'bg-danger';
+            if (p === 'high') return 'bg-warning text-dark';
+            return 'bg-secondary';
+        }
+
+        const Toast = Swal.mixin({
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 3000
+        });
+
+        loadMatches();
+    });
+</script>
+
+<style>
+    .bg-soft-success {
+        background-color: rgba(46, 204, 113, 0.1);
+    }
+
+    .bg-soft-warning {
+        background-color: rgba(241, 196, 15, 0.1);
+    }
+
+    .bg-soft-danger {
+        background-color: rgba(231, 76, 60, 0.1);
+    }
+
+    .bg-light-danger {
+        background-color: rgba(231, 76, 60, 0.03);
+    }
+
+    .bg-light-soft {
+        background-color: #f8f9fa;
+    }
+
+    .rounded-4 {
+        border-radius: 1rem !important;
+    }
+
+    .avatar-group img {
+        border: 2px solid #fff;
+    }
+
+    .table-hover tbody tr:hover {
+        background-color: rgba(0, 0, 0, .02);
+        cursor: pointer;
+    }
+
+    .btn-white {
+        background-color: #fff;
+    }
+
+    .border-light-dark {
+        border: 1px solid #e9ecef;
+    }
+</style>
+{% endblock %}

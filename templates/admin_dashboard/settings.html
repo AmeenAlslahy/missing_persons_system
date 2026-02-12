@@ -1,0 +1,224 @@
+{% extends 'admin_dashboard/base_dashboard.html' %}
+
+{% block title %}إعدادات النظام | لوحة التحكم{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="mb-0">إعدادات النظام</h4>
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="{% url 'admin_dashboard:index' %}">الرئيسية</a></li>
+            <li class="breadcrumb-item active">الإعدادات</li>
+        </ol>
+    </nav>
+</div>
+
+<div class="row">
+    <div class="col-md-4 col-lg-3">
+        <div class="card stat-card p-0 overflow-hidden">
+            <div class="list-group list-group-flush" id="settings-tabs" role="tablist">
+                <a class="list-group-item list-group-item-action active p-3" id="ai-settings-tab" data-bs-toggle="list"
+                    href="#ai-settings" role="tab">
+                    <i class="fas fa-brain me-2 text-primary"></i> إعدادات الذكاء الاصطناعي
+                </a>
+                <a class="list-group-item list-group-item-action p-3" id="general-settings-tab" data-bs-toggle="list"
+                    href="#general-settings" role="tab">
+                    <i class="fas fa-tools me-2 text-success"></i> الإعدادات العامة
+                </a>
+                <a class="list-group-item list-group-item-action p-3" id="security-settings-tab" data-bs-toggle="list"
+                    href="#security-settings" role="tab">
+                    <i class="fas fa-shield-alt me-2 text-danger"></i> الأمان والخصوصية
+                </a>
+                <a class="list-group-item list-group-item-action p-3" id="notification-settings-tab"
+                    data-bs-toggle="list" href="#notification-settings" role="tab">
+                    <i class="fas fa-bell me-2 text-warning"></i> الإشعارات والتنبيهات
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8 col-lg-9">
+        <div class="tab-content" id="settings-content">
+            <!-- AI Settings Tab -->
+            <div class="tab-pane fade show active" id="ai-settings" role="tabpanel">
+                <div class="card stat-card">
+                    <div class="card-header bg-white py-3">
+                        <h6 class="mb-0 fw-bold underline-title">تكوين محرك المطابقة الذكي</h6>
+                    </div>
+                    <div class="card-body">
+                        <form id="ai-config-form">
+                            <div class="row g-4">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold small">عتبة التشابه الدنيا (Similarity
+                                        Threshold)</label>
+                                    <div class="input-group">
+                                        <input type="range" class="form-range" name="similarity_threshold"
+                                            id="sim-range" min="0" max="1" step="0.01" value="0.32">
+                                        <span class="ms-2 badge bg-primary" id="sim-val">0.32</span>
+                                    </div>
+                                    <div class="form-text small">الحد الأدنى لاعتبار بلاغين متطابقين (0.32 هو التوازن
+                                        بين الدقة والاستدعاء).</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold small">عتبة الثقة (Confidence Threshold)</label>
+                                    <div class="input-group">
+                                        <input type="range" class="form-range" name="confidence_threshold"
+                                            id="conf-range" min="0" max="100" step="1" value="70">
+                                        <span class="ms-2 badge bg-success" id="conf-val">70%</span>
+                                    </div>
+                                    <div class="form-text small">الحد الأدنى ليتم إرسال إشعار فوري للمشرف.</div>
+                                </div>
+                                <div class="col-md-12">
+                                    <hr>
+                                    <h6 class="small fw-bold mb-3 text-muted">توزيع الأوزان (Hybrid Matching)</h6>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <label class="form-label small">وزن بصمة الوجه (Face)</label>
+                                            <input type="number" name="face_weight" class="form-control" value="0.7"
+                                                step="0.1" max="1" min="0">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label small">وزن البيانات الوصفية (Data)</label>
+                                            <input type="number" name="data_weight" class="form-control" value="0.3"
+                                                step="0.1" max="1" min="0">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold small">إصدار النموذج النشط</label>
+                                    <select name="ai_model_version" class="form-select">
+                                        <option value="MobileNetV2_v1.0">MobileNetV2 v1.0 (اقتصادي)</option>
+                                        <option value="ResNet50_v2.1" selected>ResNet50 v2.1 (دقة عالية)</option>
+                                        <option value="FaceNet_v3">FaceNet v3 (متطور)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check form-switch mt-4">
+                                        <input class="form-check-input" type="checkbox" name="auto_match_enabled"
+                                            checked>
+                                        <label class="form-check-label fw-bold">تفعيل المطابقة التلقائية في
+                                            الخلفية</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-4 pt-3 border-top d-flex justify-content-end">
+                                <button type="submit" class="btn btn-primary px-4">حفظ الإعدادات</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- General Settings Tab -->
+            <div class="tab-pane fade" id="general-settings" role="tabpanel">
+                <div class="card stat-card">
+                    <div class="card-header bg-white py-3">
+                        <h6 class="mb-0 fw-bold">الإعدادات العامة للنظام</h6>
+                    </div>
+                    <div class="card-body">
+                        <form id="general-config-form">
+                            <div class="mb-4">
+                                <label class="form-label fw-bold">وضع الصيانة (Maintenance Mode)</label>
+                                <div class="alert alert-warning border-0 bg-soft-warning p-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" name="maintenance_mode"
+                                            id="m-mode">
+                                        <label class="form-check-label fw-bold" for="m-mode">تفعيل وضع الصيانة</label>
+                                    </div>
+                                    <div class="small mt-2 text-muted">عند تفعيل هذا الوضع، لن يستطيع المستخدمون
+                                        العاديون الوصول للموقع، وسيرون رسالة صيانة بدلاً من ذلك.</div>
+                                </div>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">اسم النظام</label>
+                                    <input type="text" name="site_name" class="form-control"
+                                        value="نظام بصمة أمل لسجل المفقودين">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">البريد الرسمي للدعم</label>
+                                    <input type="email" name="support_email" class="form-control"
+                                        value="support@amal-missing.ye">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-bold">فترة صلاحية الجلسة (أيام)</label>
+                                    <input type="number" name="session_duration" class="form-control" value="30">
+                                </div>
+                            </div>
+                            <div class="mt-4 pt-3 border-top d-flex justify-content-end">
+                                <button type="submit" class="btn btn-primary px-4">حفظ الإعدادات</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        // Range indicators
+        $('#sim-range').on('input', function () {
+            $('#sim-val').text($(this).val());
+        });
+        $('#conf-range').on('input', function () {
+            $('#conf-val').text($(this).val() + '%');
+        });
+
+        // Load current AI config
+        function loadAIConfig() {
+            $.get('/api/matching/matching-configs/1/', function (data) {
+                // Populate form with data
+                if (data.id) {
+                    $('#sim-range').val(data.similarity_threshold);
+                    $('#sim-val').text(data.similarity_threshold);
+                    $('#conf-range').val(data.confidence_threshold);
+                    $('#conf-val').text(data.confidence_threshold + '%');
+                    $('input[name="face_weight"]').val(data.face_weight);
+                    $('input[name="data_weight"]').val(data.data_weight);
+                    $('select[name="ai_model_version"]').val(data.ai_model_version);
+                    $('input[name="auto_match_enabled"]').prop('checked', data.auto_match_enabled);
+                }
+            });
+        }
+
+        $('#ai-config-form').on('submit', function (e) {
+            e.preventDefault();
+            const formData = {
+                similarity_threshold: parseFloat($('#sim-range').val()),
+                confidence_threshold: parseFloat($('#conf-range').val()),
+                face_weight: parseFloat($('input[name="face_weight"]').val()),
+                data_weight: parseFloat($('input[name="data_weight"]').val()),
+                ai_model_version: $('select[name="ai_model_version"]').val(),
+                auto_match_enabled: $('input[name="auto_match_enabled"]').is(':checked'),
+                config_name: 'default'
+            };
+
+            $.ajax({
+                url: '/api/matching/matching-configs/1/',
+                method: 'PATCH',
+                data: JSON.stringify(formData),
+                contentType: 'application/json',
+                headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+                success: function () {
+                    alert('تم حفظ إعدادات الذكاء الاصطناعي بنجاح');
+                },
+                error: function (xhr) {
+                    alert('خطأ في الحفظ: ' + (xhr.responseJSON?.message || 'تأكد من أن مجموع الأوزان يساوي 1.0'));
+                }
+            });
+        });
+
+        // Mock general save
+        $('#general-config-form').on('submit', function (e) {
+            e.preventDefault();
+            alert('تم حفظ الإعدادات العامة بنجاح (وضع العرض)');
+        });
+
+        loadAIConfig();
+    });
+</script>
+{% endblock %}
