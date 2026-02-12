@@ -27,6 +27,12 @@ Python 3.8+
 PostgreSQL 13+ أو SQL Server Express
 ```
 
+### التثبيت السريع (Quick Setup)
+قم بتشغيل السكريبت المناسب لنظامك:
+- **Windows:** `setup.bat`
+- **Linux/Mac:** `./setup.sh`
+
+### التثبيت اليدوي (Manual Setup)
 ### تثبيت المكتبات
 ```bash
 pip install -r requirements.txt

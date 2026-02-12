@@ -7,7 +7,26 @@
 - Python 3.8 أو أحدث.
 - pip (مدير حزم بايثون).
 
-## خطوات التثبيت (Installation Steps)
+## 🚀 الإعداد السريع (Quick Setup)
+
+يمكنك إعداد المشروع بالكامل (البيئة الافتراضية، المكتبات، وقاعدة البيانات) بأمر واحد فقط:
+
+**Windows:**
+اضغط مرتين على ملف `setup.bat` أو شغله من التيرمينال:
+```cmd
+setup.bat
+```
+
+**macOS/Linux:**
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+---
+
+## خطوات التثبيت اليدوي (Manual Installation Steps)
+إذا كنت تفضل التثبيت اليدوي، اتبع الخطوات التالية:
 
 ### 1. إنشاء بيئة افتراضية (Create a Virtual Environment)
 
