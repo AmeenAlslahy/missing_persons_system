@@ -1,12 +1,13 @@
-from rest_framework import viewsets, generics, status
+from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.utils import timezone
 from datetime import timedelta
+import logging
 
 from .models import DailyStats, PerformanceMetric, AnalyticsReport, DashboardWidget
 from .serializers import (
@@ -17,6 +18,11 @@ from .serializers import (
 )
 from .services import AnalyticsService
 from accounts.permissions import IsVolunteerOrHigher
+from reports.models import Report
+from matching.models import MatchResult
+from accounts.models import User
+
+logger = logging.getLogger(__name__)
 
 
 class DailyStatsViewSet(viewsets.ReadOnlyModelViewSet):
@@ -41,8 +47,7 @@ class DailyStatsViewSet(viewsets.ReadOnlyModelViewSet):
     def date_range(self, request):
         """الحصول على إحصائيات لفترة محددة"""
         serializer = DateRangeSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.is_valid(raise_exception=True)
         
         data = serializer.validated_data
         queryset = self.get_queryset().filter(
@@ -87,19 +92,19 @@ class DailyStatsViewSet(viewsets.ReadOnlyModelViewSet):
         # مقارنة البلاغات الجديدة
         if yesterday_stats.new_reports > 0:
             reports_change = ((today_stats.new_reports - yesterday_stats.new_reports) / yesterday_stats.new_reports) * 100
-            comparisons['reports_change'] = reports_change
+            comparisons['reports_change'] = round(reports_change, 1)
             comparisons['reports_trend'] = 'up' if reports_change > 0 else 'down'
         
         # مقارنة المطابقات الجديدة
         if yesterday_stats.new_matches > 0:
             matches_change = ((today_stats.new_matches - yesterday_stats.new_matches) / yesterday_stats.new_matches) * 100
-            comparisons['matches_change'] = matches_change
+            comparisons['matches_change'] = round(matches_change, 1)
             comparisons['matches_trend'] = 'up' if matches_change > 0 else 'down'
         
         # مقارنة المستخدمين الجدد
         if yesterday_stats.new_users > 0:
             users_change = ((today_stats.new_users - yesterday_stats.new_users) / yesterday_stats.new_users) * 100
-            comparisons['users_change'] = users_change
+            comparisons['users_change'] = round(users_change, 1)
             comparisons['users_trend'] = 'up' if users_change > 0 else 'down'
         
         return comparisons
@@ -139,13 +144,18 @@ class PerformanceMetricsViewSet(viewsets.ReadOnlyModelViewSet):
         # حساب المتوسط العام
         overall_health = self._calculate_overall_health(metrics)
         
+        # حساب عدد المقاييس الصحية
+        healthy_count = 0
+        for metric in metrics:
+            status, _ = metric.get_status()
+            if status == 'healthy':
+                healthy_count += 1
+        
         return Response({
             'categories': categories,
-            'overall_health': overall_health,
+            'overall_health': round(overall_health, 1),
             'total_metrics': metrics.count(),
-            'healthy_metrics': metrics.filter(
-                current_value__gte=metric.threshold_warning
-            ).count() if metrics else 0
+            'healthy_metrics': healthy_count
         })
     
     def _calculate_overall_health(self, metrics):
@@ -239,9 +249,6 @@ class AnalyticsReportViewSet(viewsets.ModelViewSet):
                 'error': f'صيغة {export_format} غير مدعومة'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # هنا يمكن إضافة منطق التصدير الفعلي
-        # حالياً نرجع رابط محاكاة
-        
         return Response({
             'message': f'سيتم تصدير التقرير بصيغة {export_format}',
             'download_url': f'/api/analytics/reports/{report.report_id}/download/{export_format}/',
@@ -259,7 +266,7 @@ class DashboardWidgetViewSet(viewsets.ModelViewSet):
         user = self.request.user
         
         # الحصول على دور المستخدم
-        user_role = user.user_role
+        user_role = user.user_type
         
         # العناصر العامة + العناصر الخاصة بدور المستخدم
         queryset = DashboardWidget.objects.filter(
@@ -287,116 +294,113 @@ class DashboardView(APIView):
         """الحصول على بيانات لوحة التحكم"""
         user = request.user
         
-        # الحصول على عناصر لوحة التحكم المناسبة للمستخدم
-        # استخدام فلترة بسيطة لتجنب مشاكل قاعدة البيانات
-        if user.is_staff:
-            widgets = DashboardWidget.objects.filter(is_active=True).order_by('column', 'row', 'order')
-        else:
-            widgets = DashboardWidget.objects.filter(is_public=True, is_active=True).order_by('column', 'row', 'order')
-        
-        # الحصول على إحصائيات اليوم
-        daily_stats = DailyStats.get_or_create_today()
-
-        # الحصول على مقاييس الأداء
-        if user.is_staff:
-            metrics = PerformanceMetric.objects.filter(is_active=True)
-        else:
-            metrics = PerformanceMetric.objects.filter(is_active=True, category__in=['system', 'user'])
-
-        # الحصول على التقارير الأخيرة
-        if user.is_staff:
-            recent_reports = AnalyticsReport.objects.all().order_by('-generated_at')[:5]
-        else:
-            recent_reports = AnalyticsReport.objects.filter(
-                Q(is_public=True) | Q(allowed_users=user)
-            ).distinct().order_by('-generated_at')[:5]
-
-        # إضافة بيانات إضافية للمخططات
-        enhanced_daily_stats = DailyStatsSerializer(daily_stats).data if daily_stats else {}
-
-        # إضافة بيانات حية (Real-time) لضمان الدقة
-        active_reports_count = Report.objects.filter(status='active').count()
-        pending_reports_count = Report.objects.filter(status='pending').count() # أو requires_admin_review=True
-        resolved_reports_count = Report.objects.filter(status='resolved').count()
-
-        enhanced_daily_stats['active_reports'] = active_reports_count
-        enhanced_daily_stats['pending_review_reports'] = pending_reports_count # تحديث القيمة الحالية
-        enhanced_daily_stats['resolved_reports'] = resolved_reports_count
-
-        # إضافة بيانات المناطق الجغرافية
-        from reports.models import Report
-        from django.db.models import Count
-
-        top_cities = Report.objects.filter(city__isnull=False).values('city').annotate(
-            count=Count('id')
-        ).order_by('-count')[:10]
-
-        enhanced_daily_stats['top_cities'] = list(top_cities)
-
-        # إضافة بيانات الفئات العمرية
-        age_groups = Report.objects.filter(age_group__isnull=False).values('age_group').annotate(
-            count=Count('id')
-        ).order_by('age_group')
-
-        enhanced_daily_stats['reports_by_age_group'] = {item['age_group']: item['count'] for item in age_groups}
-
-        # --- حساب إحصائيات المطابقة والحل في الوقت الحقيقي ---
-        from matching.models import MatchResult
-        from django.db.models import Avg, F
-
-        # 1. إحصائيات المطابقة
-        total_matches = MatchResult.objects.count()
-        enhanced_daily_stats['total_matches'] = total_matches
-        
-        total_accepted = MatchResult.objects.filter(match_status='accepted').count()
-        total_reviewed = MatchResult.objects.filter(match_status__in=['accepted', 'rejected', 'false_positive']).count()
-        
-        if total_reviewed > 0:
-            match_success_rate = (total_accepted / total_reviewed) * 100
-        else:
-             # بديل: نسبة المحلولة إلى الإجمالي
-            total_reports = Report.objects.count()
-            if total_reports > 0:
-                match_success_rate = (resolved_reports_count / total_reports) * 100
+        try:
+            # الحصول على عناصر لوحة التحكم المناسبة للمستخدم
+            if user.is_staff:
+                widgets = DashboardWidget.objects.filter(is_active=True).order_by('column', 'row', 'order')
             else:
-                match_success_rate = 0.0
-        enhanced_daily_stats['match_success_rate'] = match_success_rate
+                widgets = DashboardWidget.objects.filter(is_public=True, is_active=True).order_by('column', 'row', 'order')
+            
+            # الحصول على إحصائيات اليوم
+            daily_stats = DailyStats.get_or_create_today()
 
-        # 2. إحصائيات الحل الزمنية (اليوم والأسبوع)
-        today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        week_start = today_start - timedelta(days=7)
-        
-        resolved_today = Report.objects.filter(status='resolved', updated_at__gte=today_start).count()
-        resolved_this_week = Report.objects.filter(status='resolved', updated_at__gte=week_start).count()
-        
-        enhanced_daily_stats['resolved_today'] = resolved_today
-        enhanced_daily_stats['resolved_this_week'] = resolved_this_week
+            # الحصول على مقاييس الأداء
+            if user.is_staff:
+                metrics = PerformanceMetric.objects.filter(is_active=True)
+            else:
+                metrics = PerformanceMetric.objects.filter(is_active=True, category__in=['system', 'user'])
 
-        # 3. متوسط زمن الحل
-        resolved_with_time = Report.objects.filter(
-            status='resolved', created_at__isnull=False, updated_at__isnull=False
-        )
-        avg_time = 0.0
-        if resolved_with_time.exists():
-            # حساب الفرق في Python لأن SQLite/بعض القواعد قد لا تدعم دالة الفرق المباشرة بسهولة عبر DJango ORM دون Database Functions
-            total_seconds = sum([(r.updated_at - r.created_at).total_seconds() for r in resolved_with_time])
-            avg_time = (total_seconds / resolved_with_time.count()) / 3600 # ساعات
-        
-        enhanced_daily_stats['avg_resolution_time'] = avg_time
+            # الحصول على التقارير الأخيرة
+            if user.is_staff:
+                recent_reports = AnalyticsReport.objects.all().order_by('-generated_at')[:5]
+            else:
+                recent_reports = AnalyticsReport.objects.filter(
+                    Q(is_public=True) | Q(allowed_users=user)
+                ).distinct().order_by('-generated_at')[:5]
 
+            # إضافة بيانات إضافية للمخططات
+            enhanced_daily_stats = DailyStatsSerializer(daily_stats).data if daily_stats else {}
 
-        data = {
-            'widgets': DashboardWidgetSerializer(widgets, many=True).data,
-            'daily_stats': enhanced_daily_stats,
-            'performance_metrics': PerformanceMetricSerializer(metrics, many=True).data,
-            'recent_reports': AnalyticsReportSerializer(recent_reports, many=True).data,
-            'user_role': user.user_role,
-            'is_staff': user.is_staff
-        }
-        
-        serializer = DashboardDataSerializer(data=data)
-        serializer.is_valid()
-        return Response(serializer.data)
+            # إضافة بيانات حية
+            total_reports_count = Report.objects.count()
+            active_reports_count = Report.objects.filter(status='active').count()
+            pending_reports_count = Report.objects.filter(status='pending').count()
+            resolved_reports_count = Report.objects.filter(status='resolved').count()
+
+            enhanced_daily_stats['total_reports'] = total_reports_count
+            enhanced_daily_stats['active_reports'] = active_reports_count
+            enhanced_daily_stats['pending_review_reports'] = pending_reports_count
+            enhanced_daily_stats['resolved_reports'] = resolved_reports_count
+
+            # إضافة بيانات المناطق الجغرافية
+            top_cities = Report.objects.filter(lost_governorate__isnull=False).values('lost_governorate__name_ar').annotate(
+                count=Count('report_id')
+            ).order_by('-count')[:10]
+            
+            enhanced_daily_stats['top_cities'] = [
+                {'city': item['lost_governorate__name_ar'], 'count': item['count']}
+                for item in top_cities
+            ]
+
+            # حساب إحصائيات المطابقة والحل في الوقت الحقيقي
+            total_matches = MatchResult.objects.count()
+            enhanced_daily_stats['total_matches'] = total_matches
+            
+            total_accepted = MatchResult.objects.filter(match_status='accepted').count()
+            total_reviewed = MatchResult.objects.filter(
+                match_status__in=['accepted', 'rejected', 'false_positive']
+            ).count()
+            
+            if total_reviewed > 0:
+                match_success_rate = (total_accepted / total_reviewed) * 100
+            else:
+                total_reports = Report.objects.count()
+                if total_reports > 0:
+                    match_success_rate = (resolved_reports_count / total_reports) * 100
+                else:
+                    match_success_rate = 0.0
+            enhanced_daily_stats['match_success_rate'] = match_success_rate
+
+            # إحصائيات الحل الزمنية
+            today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            week_start = today_start - timedelta(days=7)
+            
+            resolved_today = Report.objects.filter(status='resolved', updated_at__gte=today_start).count()
+            resolved_this_week = Report.objects.filter(status='resolved', updated_at__gte=week_start).count()
+            
+            enhanced_daily_stats['resolved_today'] = resolved_today
+            enhanced_daily_stats['resolved_this_week'] = resolved_this_week
+
+            # متوسط زمن الحل
+            resolved_with_time = Report.objects.filter(
+                status='resolved', created_at__isnull=False, updated_at__isnull=False
+            )
+            avg_time = 0.0
+            if resolved_with_time.exists():
+                total_hours = sum(
+                    [(r.updated_at - r.created_at).total_seconds() / 3600 for r in resolved_with_time]
+                )
+                avg_time = total_hours / resolved_with_time.count()
+            
+            enhanced_daily_stats['avg_resolution_time'] = round(avg_time, 1)
+
+            data = {
+                'widgets': DashboardWidgetSerializer(widgets, many=True, context={'request': request}).data,
+                'daily_stats': enhanced_daily_stats,
+                'performance_metrics': PerformanceMetricSerializer(metrics, many=True).data,
+                'recent_reports': AnalyticsReportSerializer(recent_reports, many=True, context={'request': request}).data,
+                'user_role': user.user_type,
+                'is_staff': user.is_staff
+            }
+            
+            return Response(data)
+            
+        except Exception as e:
+            logger.error(f"خطأ في DashboardView: {e}")
+            return Response(
+                {'error': 'حدث خطأ في تحميل بيانات لوحة التحكم'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class GenerateReportView(APIView):
@@ -406,8 +410,7 @@ class GenerateReportView(APIView):
     def post(self, request):
         """إنشاء وتوليد تقرير"""
         serializer = GenerateReportSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.is_valid(raise_exception=True)
         
         data = serializer.validated_data
         
@@ -417,9 +420,9 @@ class GenerateReportView(APIView):
             report_type=data['report_type'],
             period_start=data['period_start'],
             period_end=data['period_end'],
-            filters=data.get('filters'),
+            filters=data.get('filters', {}),
             is_public=data['is_public'],
-            status='generating'
+            status='draft'
         )
         
         # إذا طلب المستخدم، توليد التقرير فوراً
@@ -429,17 +432,17 @@ class GenerateReportView(APIView):
             if success:
                 return Response({
                     'message': 'تم إنشاء وتوليد التقرير بنجاح',
-                    'report': AnalyticsReportSerializer(report).data
+                    'report': AnalyticsReportSerializer(report, context={'request': request}).data
                 }, status=status.HTTP_201_CREATED)
             else:
                 return Response({
                     'error': 'تم إنشاء التقرير لكن فشل توليد البيانات',
-                    'report': AnalyticsReportSerializer(report).data
+                    'report': AnalyticsReportSerializer(report, context={'request': request}).data
                 }, status=status.HTTP_201_CREATED)
         else:
             return Response({
                 'message': 'تم إنشاء التقرير، سيتم توليده في الخلفية',
-                'report': AnalyticsReportSerializer(report).data
+                'report': AnalyticsReportSerializer(report, context={'request': request}).data
             }, status=status.HTTP_201_CREATED)
 
 
@@ -469,48 +472,46 @@ class AnalyticsStatisticsView(APIView):
             }
         }
 
-        # إحصائيات متقدمة للمشرفين والمستخدمين العاديين
-        from reports.models import Report
-        from matching.models import MatchResult
-        from accounts.models import User
+        try:
+            # الحصول على إحصائيات هذا الشهر
+            start_of_month = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        # الحصول على إحصائيات هذا الشهر
-        start_of_month = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            # حساب الإحصائيات الصحيحة
+            total_reports = Report.objects.count()
+            active_reports = Report.objects.filter(status='active').count()
+            total_matches = MatchResult.objects.count()
 
-        # حساب الإحصائيات الصحيحة
-        total_reports = Report.objects.count()
-        active_reports = Report.objects.filter(status='active').count()
-        total_matches = MatchResult.objects.count()
+            stats['system'].update({
+                'total_reports': total_reports,
+                'active_reports': active_reports,
+                'this_month_reports': Report.objects.filter(created_at__gte=start_of_month).count(),
+                'total_matches': total_matches,
+                'this_month_matches': MatchResult.objects.filter(detected_at__gte=start_of_month).count(),
+                'total_users': User.objects.count(),
+                'this_month_users': User.objects.filter(date_joined__gte=start_of_month).count(),
+                'match_success_rate': service._calculate_match_success_rate(),
+                'resolution_rate': service._calculate_resolution_rate(),
+            })
 
-        stats['system'].update({
-            'total_reports': total_reports,
-            'active_reports': active_reports,  # إضافة البلاغات النشطة
-            'this_month_reports': Report.objects.filter(created_at__gte=start_of_month).count(),
-            'total_matches': total_matches,
-            'this_month_matches': MatchResult.objects.filter(detected_at__gte=start_of_month).count(),
-            'total_users': User.objects.count(),
-            'this_month_users': User.objects.filter(date_joined__gte=start_of_month).count(),
-            'match_success_rate': service._calculate_match_success_rate(),
-            'resolution_rate': service._calculate_resolution_rate(),
-        })
+            # تحليل الاتجاهات
+            last_30_days_stats = DailyStats.objects.filter(
+                date__gte=timezone.now().date() - timedelta(days=30)
+            ).order_by('date')
 
-        # تحليل الاتجاهات
-        last_30_days_stats = DailyStats.objects.filter(
-            date__gte=timezone.now().date() - timedelta(days=30)
-        ).order_by('date')
+            if last_30_days_stats:
+                stats['trends']['reports_trend'] = service.analyze_trend([s.new_reports for s in last_30_days_stats])
+                stats['trends']['matches_trend'] = service.analyze_trend([s.new_matches for s in last_30_days_stats])
+                stats['trends']['users_trend'] = service.analyze_trend([s.new_users for s in last_30_days_stats])
+                
+                trends_insights = service._generate_performance_insights(last_30_days_stats)
+                stats['insights'] = trends_insights
 
-        trends_insights = service._generate_performance_insights(last_30_days_stats)
-        
-        # حساب اتجاهات المؤشرات
-        if last_30_days_stats:
-            stats['trends']['reports_trend'] = service.analyze_trend([s.new_reports for s in last_30_days_stats])
-            stats['trends']['matches_trend'] = service.analyze_trend([s.new_matches for s in last_30_days_stats])
-            stats['trends']['users_trend'] = service.analyze_trend([s.new_users for s in last_30_days_stats])
+            # بيانات إضافية للمخططات
+            stats['user_trust'] = service.get_user_trust_distribution()
+            stats['demographics'] = service.get_report_demographics()
 
-        stats['insights'] = trends_insights
-
-        # بيانات جديدة للمخططات
-        stats['user_trust'] = service.get_user_trust_distribution()
-        stats['demographics'] = service.get_report_demographics()
+        except Exception as e:
+            logger.error(f"خطأ في AnalyticsStatisticsView: {e}")
+            stats['error'] = 'حدث خطأ في تحميل الإحصائيات'
 
         return Response(stats)

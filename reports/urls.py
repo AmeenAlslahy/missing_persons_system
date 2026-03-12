@@ -4,10 +4,9 @@ from . import views
 
 router = DefaultRouter()
 router.register(r'reports', views.ReportViewSet, basename='report')
-router.register(r'categories', views.CategoryViewSet)
-router.register(r'areas', views.GeographicalAreaViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
-    path('statistics/', views.ReportStatisticsView.as_view(), name='report-stats'),
+    path('statistics/', views.ReportStatisticsView.as_view(), name='report-statistics'),
+    path('stats/', views.ReportStatisticsView.as_view(), name='report-stats'),  # alias
 ]

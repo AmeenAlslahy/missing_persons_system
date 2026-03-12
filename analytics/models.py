@@ -5,6 +5,7 @@ from accounts.models import User
 from reports.models import Report
 from matching.models import MatchResult
 import uuid
+from django.db.models import Q  # إضافة هذا السطر المفقود
 
 
 class DailyStats(models.Model):
@@ -72,54 +73,35 @@ class DailyStats(models.Model):
         stats, created = cls.objects.get_or_create(date=today)
         
         if created:
-            # حساب الإحصائيات الأولية
-            stats.calculate_stats()
+            # حساب الإحصائيات الأولية بدون save() إضافي
+            stats._calculate_initial_stats()
+            stats.save()  # save مرة واحدة فقط
         
         return stats
     
-    def calculate_stats(self):
-        """حساب الإحصائيات"""
-        from django.db.models import Count, Q, Avg
+    def _calculate_initial_stats(self):
+        """حساب الإحصائيات الأولية (للإحصائية الجديدة فقط)"""
         from datetime import timedelta
         
-        # المستخدمون
         stats_date = self.date
         start_date = stats_date
         end_date = stats_date + timedelta(days=1)
         
         # المستخدمون
         self.total_users = User.objects.count()
-        self.new_users = User.objects.filter(
-            date_joined__date=stats_date
-        ).count()
+        self.new_users = User.objects.filter(date_joined__date=stats_date).count()
         
-        # المستخدمون النشطون (دخلوا خلال آخر 30 يوم)
         thirty_days_ago = timezone.now() - timedelta(days=30)
-        self.active_users = User.objects.filter(
-            last_login__gte=thirty_days_ago
-        ).count()
-        
-        self.verified_users = User.objects.filter(
-            verification_status='verified'
-        ).count()
+        self.active_users = User.objects.filter(last_login__gte=thirty_days_ago).count()
+        self.verified_users = User.objects.filter(verification_status='verified').count()
         
         # البلاغات
         self.total_reports = Report.objects.count()
-        self.new_reports = Report.objects.filter(
-            created_at__date=stats_date
-        ).count()
-        
-        self.missing_reports = Report.objects.filter(
-            report_type='missing'
-        ).count()
-        
-        self.found_reports = Report.objects.filter(
-            report_type='found'
-        ).count()
-        
-        self.resolved_reports = Report.objects.filter(
-            status='resolved'
-        ).count()
+        self.new_reports = Report.objects.filter(created_at__date=stats_date).count()
+        self.missing_reports = Report.objects.filter(report_type='missing').count()
+        self.found_reports = Report.objects.filter(report_type='found').count()
+        self.resolved_reports = Report.objects.filter(status='resolved').count()
+        self.pending_review_reports = Report.objects.filter(status='pending').count()
         
         # إحصائيات زمنية للحل
         today = timezone.now().date()
@@ -142,106 +124,58 @@ class DailyStats(models.Model):
         )
         if resolved_with_time.exists():
             total_time = sum(
-                [(r.updated_at - r.created_at).total_seconds() for r in resolved_with_time],
-                0
+                [(r.updated_at - r.created_at).total_seconds() / 3600 for r in resolved_with_time],
+                0.0
             )
-            # النتيجة بالساعات
-            self.avg_resolution_time = (total_time / resolved_with_time.count()) / 3600
-        else:
-            self.avg_resolution_time = 0.0
-
-        self.pending_review_reports = Report.objects.filter(
-            requires_admin_review=True
-        ).count()
+            self.avg_resolution_time = total_time / resolved_with_time.count()
         
         # المطابقة
         self.total_matches = MatchResult.objects.count()
-        self.new_matches = MatchResult.objects.filter(
-            detected_at__date=stats_date
-        ).count()
-        
-        self.accepted_matches = MatchResult.objects.filter(
-            match_status='accepted'
-        ).count()
-        
-        self.false_positive_matches = MatchResult.objects.filter(
-            match_status='false_positive'
-        ).count()
+        self.new_matches = MatchResult.objects.filter(detected_at__date=stats_date).count()
+        self.accepted_matches = MatchResult.objects.filter(match_status='accepted').count()
+        self.false_positive_matches = MatchResult.objects.filter(match_status='false_positive').count()
         
         # حساب معدل نجاح المطابقة
-        total_accepted = MatchResult.objects.filter(
-            match_status='accepted'
-        ).count()
-        
+        total_accepted = self.accepted_matches
         total_reviewed = MatchResult.objects.filter(
             match_status__in=['accepted', 'rejected', 'false_positive']
         ).count()
         
-        # جلب إحصائيات من التقارير مباشرة لضمان الدقة
-        self.resolved_reports = Report.objects.filter(status='resolved').count()
-        self.missing_reports = Report.objects.filter(report_type='missing').count()
-        self.found_reports = Report.objects.filter(report_type='found').count()
-        self.total_reports = Report.objects.count()
-        self.total_users = User.objects.count()
-        
         if total_reviewed > 0:
             self.match_success_rate = (total_accepted / total_reviewed) * 100
-        else:
-            # قيمة افتراضية منطقية بدلاً من 85% الثابتة، نحسبها من إجمالي البلاغات المحلولة
-            if self.total_reports > 0:
-                self.match_success_rate = (self.resolved_reports / self.total_reports) * 100
-            else:
-                self.match_success_rate = 0.0
-        
-        # الجغرافيا
-        # أهم المدن
-        from django.db.models import Count
-        city_stats = Report.objects.filter(
-            city__isnull=False
-        ).values('city').annotate(
-            count=Count('id')
-        ).order_by('-count')[:10]
-        # ملاحظة: تم التأكد من أن الترتيب الافتراضي لا يتعارض مع التجميع في SQL Server
-        # بوضع order_by بعد annotate
-        
-        self.top_cities = [
-            {'city': item['city'], 'count': item['count']}
-            for item in city_stats
-        ]
-        
-        # البلاغات حسب الجنس
-        gender_stats = Report.objects.values('gender').order_by().annotate(
-            count=Count('id')
-        )
-        self.reports_by_gender = {
-            item['gender']: item['count']
-            for item in gender_stats
-        }
-        
-        # البلاغات حسب الفئة العمرية
-        age_groups = {
-            'children': (0, 12),
-            'teens': (13, 19),
-            'young_adults': (20, 35),
-            'adults': (36, 60),
-            'seniors': (61, 150)
-        }
-        
-        age_stats = {}
-        for group, (min_age, max_age) in age_groups.items():
-            count = Report.objects.filter(
-                age__gte=min_age,
-                age__lte=max_age
-            ).count()
-            age_stats[group] = count
-        
-        self.reports_by_age_group = age_stats
-        
+        elif self.total_reports > 0:
+            self.match_success_rate = (self.resolved_reports / self.total_reports) * 100
+    
+    def calculate_stats(self):
+        """إعادة حساب الإحصائيات (للتحديث)"""
+        # هذا مشابه لـ _calculate_initial_stats ولكن يمكن إضافته عند الحاجة
+        self._calculate_initial_stats()
         self.save()
 
 
 class PerformanceMetric(models.Model):
     """مقاييس الأداء"""
+    METRIC_CATEGORIES = [
+        ('system', 'نظام'),
+        ('matching', 'مطابقة'),
+        ('user', 'مستخدم'),
+        ('report', 'بلاغ'),
+        ('security', 'أمان'),
+    ]
+    
+    DIRECTIONS = [
+        ('higher_better', 'الأعلى أفضل'),
+        ('lower_better', 'الأقل أفضل'),
+        ('target', 'الهدف أفضل'),
+    ]
+    
+    UPDATE_FREQUENCIES = [
+        ('realtime', 'حقيقي'),
+        ('hourly', 'كل ساعة'),
+        ('daily', 'يومي'),
+        ('weekly', 'أسبوعي'),
+    ]
+    
     metric_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     metric_name = models.CharField(_('اسم المقياس'), max_length=100, unique=True)
     metric_description = models.TextField(_('وصف المقياس'), blank=True)
@@ -259,13 +193,7 @@ class PerformanceMetric(models.Model):
     category = models.CharField(
         _('الفئة'),
         max_length=50,
-        choices=[
-            ('system', 'نظام'),
-            ('matching', 'مطابقة'),
-            ('user', 'مستخدم'),
-            ('report', 'بلاغ'),
-            ('security', 'أمان'),
-        ],
+        choices=METRIC_CATEGORIES,
         default='system'
     )
     
@@ -273,11 +201,7 @@ class PerformanceMetric(models.Model):
     direction = models.CharField(
         _('الاتجاه'),
         max_length=20,
-        choices=[
-            ('higher_better', 'الأعلى أفضل'),
-            ('lower_better', 'الأقل أفضل'),
-            ('target', 'الهدف أفضل'),
-        ],
+        choices=DIRECTIONS,
         default='higher_better'
     )
     
@@ -286,12 +210,7 @@ class PerformanceMetric(models.Model):
     update_frequency = models.CharField(
         _('تكرار التحديث'),
         max_length=20,
-        choices=[
-            ('realtime', 'حقيقي'),
-            ('hourly', 'كل ساعة'),
-            ('daily', 'يومي'),
-            ('weekly', 'أسبوعي'),
-        ],
+        choices=UPDATE_FREQUENCIES,
         default='daily'
     )
     
@@ -310,6 +229,9 @@ class PerformanceMetric(models.Model):
     
     def get_status(self):
         """الحصول على حالة المقياس"""
+        if self.target_value == 0:
+            return 'unknown', 'غير معروف'
+            
         percentage = (self.current_value / self.target_value) * 100
         
         if percentage >= self.threshold_warning:
@@ -328,29 +250,47 @@ class PerformanceMetric(models.Model):
 
 class AnalyticsReport(models.Model):
     """تقارير تحليلية"""
+    REPORT_TYPES = [
+        ('performance', 'أداء'),
+        ('user', 'مستخدمين'),
+        ('reports', 'بلاغات'),
+        ('matching', 'مطابقة'),
+        ('financial', 'مالي'),
+        ('custom', 'مخصص'),
+    ]
+    
+    REPORT_STATUS = [
+        ('draft', 'مسودة'),
+        ('generating', 'قيد التوليد'),
+        ('ready', 'جاهز'),
+        ('failed', 'فشل'),
+        ('archived', 'مؤرشف'),
+    ]
+    
+    SCHEDULE_FREQUENCIES = [
+        ('daily', 'يومي'),
+        ('weekly', 'أسبوعي'),
+        ('monthly', 'شهري'),
+        ('quarterly', 'ربع سنوي'),
+        ('yearly', 'سنوي'),
+    ]
+    
     report_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     report_name = models.CharField(_('اسم التقرير'), max_length=200)
     report_type = models.CharField(
         _('نوع التقرير'),
         max_length=50,
-        choices=[
-            ('performance', 'أداء'),
-            ('user', 'مستخدمين'),
-            ('reports', 'بلاغات'),
-            ('matching', 'مطابقة'),
-            ('financial', 'مالي'),
-            ('custom', 'مخصص'),
-        ],
+        choices=REPORT_TYPES,
         default='performance'
     )
     
     # المحتوى
     description = models.TextField(_('الوصف'), blank=True)
-    filters = models.JSONField(_('الفلاتر'), blank=True, null=True)
+    filters = models.JSONField(_('الفلاتر'), blank=True, null=True, default=dict)
     
     # البيانات
-    data = models.JSONField(_('البيانات'), blank=True, null=True)
-    charts = models.JSONField(_('الرسوم البيانية'), blank=True, null=True)
+    data = models.JSONField(_('البيانات'), blank=True, null=True, default=dict)
+    charts = models.JSONField(_('الرسوم البيانية'), blank=True, null=True, default=dict)
     insights = models.TextField(_('الرؤى والتحليلات'), blank=True)
     recommendations = models.TextField(_('التوصيات'), blank=True)
     
@@ -364,13 +304,7 @@ class AnalyticsReport(models.Model):
     schedule_frequency = models.CharField(
         _('تكرار الجدولة'),
         max_length=20,
-        choices=[
-            ('daily', 'يومي'),
-            ('weekly', 'أسبوعي'),
-            ('monthly', 'شهري'),
-            ('quarterly', 'ربع سنوي'),
-            ('yearly', 'سنوي'),
-        ],
+        choices=SCHEDULE_FREQUENCIES,
         blank=True
     )
     
@@ -389,13 +323,7 @@ class AnalyticsReport(models.Model):
     status = models.CharField(
         _('الحالة'),
         max_length=20,
-        choices=[
-            ('draft', 'مسودة'),
-            ('generating', 'قيد التوليد'),
-            ('ready', 'جاهز'),
-            ('failed', 'فشل'),
-            ('archived', 'مؤرشف'),
-        ],
+        choices=REPORT_STATUS,
         default='draft'
     )
     
@@ -420,7 +348,7 @@ class AnalyticsReport(models.Model):
         """توليد التقرير"""
         try:
             self.status = 'generating'
-            self.save()
+            self.save(update_fields=['status'])
             
             # توليد البيانات حسب نوع التقرير
             if self.report_type == 'performance':
@@ -438,14 +366,14 @@ class AnalyticsReport(models.Model):
             
             self.status = 'ready'
             self.last_run = timezone.now()
-            self.save()
+            self.save(update_fields=['status', 'data', 'insights', 'recommendations', 'last_run'])
             
             return True
             
         except Exception as e:
             self.status = 'failed'
             self.insights = f"خطأ في توليد التقرير: {str(e)}"
-            self.save()
+            self.save(update_fields=['status', 'insights'])
             return False
     
     def _generate_performance_report(self):
@@ -489,22 +417,92 @@ class AnalyticsReport(models.Model):
         }
         
         return data
+    
+    def _generate_user_report(self):
+        """توليد تقرير المستخدمين"""
+        from django.db.models import Count
+        
+        data = {
+            'total_users': User.objects.count(),
+            'verified_users': User.objects.filter(verification_status='verified').count(),
+            'active_users': User.objects.filter(is_active=True).count(),
+            'by_user_type': list(User.objects.values('user_type').annotate(count=Count('id'))),
+            'by_verification': list(User.objects.values('verification_status').annotate(count=Count('id'))),
+        }
+        return data
+    
+    def _generate_reports_report(self):
+        """توليد تقرير البلاغات"""
+        from django.db.models import Count
+        
+        data = {
+            'total': Report.objects.count(),
+            'by_type': list(Report.objects.values('report_type').annotate(count=Count('id'))),
+            'by_status': list(Report.objects.values('status').annotate(count=Count('id'))),
+            'by_importance': list(Report.objects.values('importance').annotate(count=Count('id'))),
+        }
+        return data
+    
+    def _generate_matching_report(self):
+        """توليد تقرير المطابقة"""
+        from django.db.models import Count, Avg
+        
+        data = {
+            'total': MatchResult.objects.count(),
+            'by_status': list(MatchResult.objects.values('match_status').annotate(count=Count('id'))),
+            'avg_similarity': MatchResult.objects.aggregate(avg=Avg('similarity_score'))['avg'],
+        }
+        return data
+    
+    def _generate_insights(self):
+        """توليد الرؤى من البيانات"""
+        insights = []
+        if self.data:
+            if self.report_type == 'performance' and 'summary' in self.data:
+                summary = self.data['summary']
+                if summary.get('total_reports', 0) > 100:
+                    insights.append("نشاط عالي في البلاغات خلال هذه الفترة")
+                elif summary.get('total_reports', 0) < 10:
+                    insights.append("نشاط منخفض في البلاغات خلال هذه الفترة")
+        return "\n".join(insights) if insights else "لا توجد رؤى متاحة"
+    
+    def _generate_recommendations(self):
+        """توليد التوصيات"""
+        return "لا توجد توصيات متاحة"
 
 
 class DashboardWidget(models.Model):
     """عناصر واجهة لوحة التحكم"""
+    WIDGET_TYPES = [
+        ('chart', 'رسم بياني'),
+        ('metric', 'مقياس'),
+        ('table', 'جدول'),
+        ('list', 'قائمة'),
+        ('map', 'خريطة'),
+    ]
+    
+    DATA_SOURCES = [
+        ('daily_stats', 'الإحصائيات اليومية'),
+        ('performance_metrics', 'مقاييس الأداء'),
+        ('reports', 'البلاغات'),
+        ('users', 'المستخدمين'),
+        ('matches', 'المطابقات'),
+        ('custom_query', 'استعلام مخصص'),
+    ]
+    
+    SIZES = [
+        ('small', 'صغير (1x1)'),
+        ('medium', 'متوسط (2x1)'),
+        ('large', 'كبير (2x2)'),
+        ('full', 'كامل (3x2)'),
+    ]
+    
     widget_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     widget_name = models.CharField(_('اسم العنصر'), max_length=100)
     widget_type = models.CharField(
         _('نوع العنصر'),
         max_length=50,
-        choices=[
-            ('chart', 'رسم بياني'),
-            ('metric', 'مقياس'),
-            ('table', 'جدول'),
-            ('list', 'قائمة'),
-            ('map', 'خريطة'),
-        ],
+        choices=WIDGET_TYPES,
         default='metric'
     )
     
@@ -512,20 +510,13 @@ class DashboardWidget(models.Model):
     data_source = models.CharField(
         _('مصدر البيانات'),
         max_length=50,
-        choices=[
-            ('daily_stats', 'الإحصائيات اليومية'),
-            ('performance_metrics', 'مقاييس الأداء'),
-            ('reports', 'البلاغات'),
-            ('users', 'المستخدمين'),
-            ('matches', 'المطابقات'),
-            ('custom_query', 'استعلام مخصص'),
-        ],
+        choices=DATA_SOURCES,
         default='daily_stats'
     )
     
     # الاستعلام
     query = models.TextField(_('الاستعلام'), blank=True)
-    filters = models.JSONField(_('الفلاتر'), blank=True, null=True)
+    filters = models.JSONField(_('الفلاتر'), blank=True, null=True, default=dict)
     
     # العرض
     title = models.CharField(_('العنوان'), max_length=200)
@@ -533,12 +524,7 @@ class DashboardWidget(models.Model):
     size = models.CharField(
         _('الحجم'),
         max_length=20,
-        choices=[
-            ('small', 'صغير (1x1)'),
-            ('medium', 'متوسط (2x1)'),
-            ('large', 'كبير (2x2)'),
-            ('full', 'كامل (3x2)'),
-        ],
+        choices=SIZES,
         default='medium'
     )
     
@@ -597,24 +583,25 @@ class DashboardWidget(models.Model):
         
         elif self.data_source == 'reports':
             from reports.models import Report
-            from django.db.models import Count
+            from django.db.models import Count, Q
+            
             data = Report.objects.aggregate(
                 total=Count('id'),
-                missing=Count('id', filter=models.Q(report_type='missing')),
-                found=Count('id', filter=models.Q(report_type='found')),
-                active=Count('id', filter=models.Q(status='active')),
-                resolved=Count('id', filter=models.Q(status='resolved')),
+                missing=Count('id', filter=Q(report_type='missing')),
+                found=Count('id', filter=Q(report_type='found')),
+                active=Count('id', filter=Q(status='active')),
+                resolved=Count('id', filter=Q(status='resolved')),
             )
             return data
             
         elif self.data_source == 'matches':
             from matching.models import MatchResult
-            from django.db.models import Count, Avg
+            from django.db.models import Count, Avg, Q
             
             data = MatchResult.objects.aggregate(
                 total=Count('id'),
-                pending=Count('id', filter=models.Q(match_status='pending')),
-                accepted=Count('id', filter=models.Q(match_status='accepted')),
+                pending=Count('id', filter=Q(match_status='pending')),
+                accepted=Count('id', filter=Q(match_status='accepted')),
                 avg_similarity=Avg('similarity_score'),
             )
             return data

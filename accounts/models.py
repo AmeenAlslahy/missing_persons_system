@@ -2,158 +2,110 @@ from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
-import uuid
-from .fields import EncryptedCharField
+from locations.models import Governorate, District, Uzlah
 
-class UserManager(BaseUserManager):
-    """مدير مخصص لنموذج المستخدم"""
-    
-    def create_user(self, email, full_name, password=None, **extra_fields):
-        """إنشاء مستخدم عادي"""
-        if not email:
-            raise ValueError(_('يجب إدخال البريد الإلكتروني'))
-        if not full_name:
-            raise ValueError(_('يجب إدخال الاسم الكامل'))
+class CustomUserManager(BaseUserManager):
+    def create_user(self, phone, first_name, last_name, password=None, **extra_fields):
+        if not phone:
+            raise ValueError(_('يجب إدخال رقم الهاتف'))
+        if not first_name or not last_name:
+            raise ValueError(_('يجب إدخال الاسم الأول واللقب'))
             
-        email = self.normalize_email(email)
-        user = self.model(email=email, full_name=full_name, **extra_fields)
+        user = self.model(phone=phone, first_name=first_name, last_name=last_name, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
         return user
     
-    def create_superuser(self, email, full_name, password=None, **extra_fields):
-        """إنشاء مستخدم مدير"""
+    def create_superuser(self, phone, first_name, last_name, password=None, **extra_fields):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('is_active', True)
-        extra_fields.setdefault('verification_status', 'verified')
-        extra_fields.setdefault('user_role', 'super_admin')
+        extra_fields.setdefault('user_type', 'super_admin')
         
-        if extra_fields.get('is_staff') is not True:
-            raise ValueError(_('المستخدم المدير يجب أن يكون is_staff=True'))
-        if extra_fields.get('is_superuser') is not True:
-            raise ValueError(_('المستخدم المدير يجب أن يكون is_superuser=True'))
-            
-        return self.create_user(email, full_name, password, **extra_fields)
-
+        return self.create_user(phone, first_name, last_name, password, **extra_fields)
 
 class User(AbstractBaseUser, PermissionsMixin):
-    """نموذج المستخدم المخصص"""
+    USER_TYPE_CHOICES = [
+        ('user', 'مستخدم عادي'),
+        ('volunteer', 'متطوع'),
+        ('admin', 'مشرف'),
+        ('super_admin', 'مدير نظام'),
+    ]
     
-    class Role(models.TextChoices):
-        USER = 'user', _('مستخدم عادي')
-        VOLUNTEER = 'volunteer', _('متطوع')
-        ADMIN = 'admin', _('مشرف')
-        SUPER_ADMIN = 'super_admin', _('مشرف رئيسي')
+    VERIFICATION_STATUS = [
+        ('unverified', 'غير محقق'),
+        ('pending', 'قيد الانتظار'),
+        ('verified', 'تم التحقق'),
+        ('rejected', 'مرفوض'),
+    ]
     
-    class VerificationStatus(models.TextChoices):
-        PENDING = 'pending', _('في انتظار التحقق')
-        VERIFIED = 'verified', _('مؤكد الهوية')
-        REJECTED = 'rejected', _('مرفوض')
+    # المعلومات الأساسية
+    phone = models.CharField(_('رقم الهاتف'), max_length=20, unique=True)
+    first_name = models.CharField(_('الاسم الأول'), max_length=150)
+    middle_name = models.CharField(_('الاسم الأوسط'), max_length=150, null=True, blank=True)
+    last_name = models.CharField(_('اللقب'), max_length=150)
+    email = models.EmailField(_('البريد الإلكتروني'), null=True, blank=True)
     
-    class Gender(models.TextChoices):
-        MALE = 'M', _('ذكر')
-        FEMALE = 'F', _('أنثى')
-    
-    email = models.EmailField(_('البريد الإلكتروني'), unique=True)
-    full_name = models.CharField(_('الاسم الكامل'), max_length=255)
-    national_id = EncryptedCharField(_('رقم الهوية الوطنية'), max_length=255, null=True, blank=True, unique=True)
-    date_of_birth = models.DateField(_('تاريخ الميلاد'), null=True, blank=True)
-    gender = models.CharField(_('الجنس'), max_length=1, choices=Gender.choices, null=True, blank=True)
-    phone = EncryptedCharField(_('رقم الهاتف'), max_length=255, null=True, blank=True)
-    
-    # السكن
-    governorate = models.CharField(_('المحافظة'), max_length=100, null=True, blank=True)
-    district = models.CharField(_('المديرية'), max_length=100, null=True, blank=True)
-    uzlah = models.CharField(_('العزلة'), max_length=100, null=True, blank=True)
-    
-    user_role = models.CharField(
-        _('دور المستخدم'), 
-        max_length=20, 
-        choices=Role.choices, 
-        default=Role.USER
+    # موقع السكن (قد يتغير لكن نادراً)
+    home_governorate = models.ForeignKey(
+        Governorate, on_delete=models.SET_NULL, null=True, blank=True,
+        verbose_name=_('محافظة السكن'), related_name='users'
+    )
+    home_district = models.ForeignKey(
+        District, on_delete=models.SET_NULL, null=True, blank=True,
+        verbose_name=_('مديرية السكن'), related_name='users'
+    )
+    home_uzlah = models.ForeignKey(
+        Uzlah, on_delete=models.SET_NULL, null=True, blank=True,
+        verbose_name=_('عزلة السكن'), related_name='users'
     )
     
-    # التحقق والأمان
-    verification_date = models.DateTimeField(_('تاريخ التحقق'), null=True, blank=True)
-    verified_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, verbose_name=_('تم التحقق بواسطة'))
-    two_factor_enabled = models.BooleanField(_('المصادقة الثنائية'), default=False)
-    last_password_change = models.DateTimeField(_('آخر تغيير لكلمة المرور'), auto_now_add=True)
-
+    # نوع المستخدم والصلاحيات
+    user_type = models.CharField(_('نوع المستخدم'), max_length=20, choices=USER_TYPE_CHOICES, default='user')
+    
+    # التحقق عبر OTP
+    phone_verified = models.BooleanField(_('رقم الهاتف موثق'), default=False)
+    otp_code = models.CharField(_('رمز التحقق'), max_length=6, null=True, blank=True)
+    otp_expiry = models.DateTimeField(_('تاريخ انتهاء رمز التحقق'), null=True, blank=True)
+    otp_attempts = models.IntegerField(_('محاولات التحقق'), default=0)
+    last_otp_request = models.DateTimeField(_('آخر طلب رمز'), null=True, blank=True)
+    
+    # حالة التحقق الكامل (توثيق الهوية)
     verification_status = models.CharField(
-        _('حالة التحقق'), 
-        max_length=20, 
-        choices=VerificationStatus.choices, 
-        default=VerificationStatus.PENDING
+        _('حالة التحقق من الهوية'), max_length=20, choices=VERIFICATION_STATUS, default='unverified'
     )
     
-    is_active = models.BooleanField(_('نشط'), default=True)
-    is_blocked = models.BooleanField(_('محظور'), default=False)
-    blocking_reason = models.TextField(_('سبب الحظر'), null=True, blank=True)
-    is_staff = models.BooleanField(_('موظف'), default=False)
-    date_joined = models.DateTimeField(_('تاريخ الانضمام'), default=timezone.now)
-    last_login = models.DateTimeField(_('آخر دخول'), null=True, blank=True)
-    
+    # درجة الثقة
     trust_score = models.FloatField(_('درجة الثقة'), default=0.0)
-    total_reports = models.IntegerField(_('عدد البلاغات'), default=0)
-    resolved_reports = models.IntegerField(_('البلاغات المحلولة'), default=0)
     
-    profile_picture = models.ImageField(
-        _('الصورة الشخصية'), 
-        upload_to='profiles/', 
-        null=True, 
-        blank=True
-    )
+    # حالة الحساب
+    is_active = models.BooleanField(_('نشط'), default=True)
+    date_joined = models.DateTimeField(_('تاريخ الانضمام'), default=timezone.now)
     
-    objects = UserManager()
+    objects = CustomUserManager()
     
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['full_name']
+    USERNAME_FIELD = 'phone'
+    REQUIRED_FIELDS = ['first_name', 'last_name']
     
     class Meta:
         verbose_name = _('مستخدم')
         verbose_name_plural = _('المستخدمين')
-        ordering = ['-date_joined']
+    
+    @property
+    def full_name(self):
+        parts = [self.first_name]
+        if self.middle_name:
+            parts.append(self.middle_name)
+        parts.append(self.last_name)
+        return ' '.join(parts)
+    
+    @property
+    def is_staff(self):
+        return self.user_type in ['admin', 'super_admin']
+    
+    @property
+    def is_superuser(self):
+        return self.user_type == 'super_admin'
     
     def __str__(self):
-        return f"{self.full_name} ({self.email})"
-    
-    def update_trust_score(self):
-        """تحديث درجة الثقة"""
-        if self.total_reports > 0:
-            self.trust_score = (self.resolved_reports / self.total_reports) * 100
-        else:
-            self.trust_score = 0.0
-        self.save(update_fields=['trust_score'])
-
-
-class VolunteerProfile(models.Model):
-    """الملف الشخصي للمتطوع"""
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='volunteer_profile')
-    city = models.CharField(_('المدينة'), max_length=100, null=True, blank=True)
-    area = models.CharField(_('المنطقة'), max_length=100, null=True, blank=True)
-    is_active_volunteer = models.BooleanField(_('متطوع نشط'), default=True)
-    volunteer_since = models.DateField(_('متطوع منذ'), default=timezone.now)
-    total_contributions = models.IntegerField(_('إجمالي المساهمات'), default=0)
-    skills = models.JSONField(_('المهارات'), default=list, blank=True)
-    languages = models.JSONField(_('اللغات'), default=list, blank=True)
-    availability_hours = models.JSONField(_('ساعات التوفر'), default=dict, blank=True)
-    
-    class Meta:
-        verbose_name = _('ملف المتطوع')
-        verbose_name_plural = _('ملفات المتطوعين')
-
-
-class AuditLog(models.Model):
-    """سجل التدقيق للمستخدمين"""
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='audit_logs')
-    action_type = models.CharField(_('نوع العملية'), max_length=50)
-    action_details = models.TextField(_('تفاصيل العملية'))
-    ip_address = models.GenericIPAddressField(_('عنوان IP'), null=True, blank=True)
-    user_agent = models.TextField(_('معلومات المتصفح'), null=True, blank=True)
-    created_at = models.DateTimeField(_('تاريخ العملية'), auto_now_add=True)
-    
-    class Meta:
-        verbose_name = _('سجل تدقيق')
-        verbose_name_plural = _('سجلات التدقيق')
-        ordering = ['-created_at']
+        return f"{self.full_name} ({self.phone})"

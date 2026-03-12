@@ -2,6 +2,10 @@ from django.utils import timezone
 from datetime import timedelta
 import logging
 from .models import DailyStats, PerformanceMetric
+from reports.models import Report
+from matching.models import MatchResult
+from accounts.models import User
+from django.db.models import Count, Q, Avg
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +18,7 @@ class AnalyticsService:
         تحديث الإحصائيات عند تغيير تقرير
         """
         try:
-            # تحديث إحصائيات اليوم (سيعيد حساب كل شيء بناءً على الحالات الحالية)
+            # تحديث إحصائيات اليوم
             self.update_daily_stats()
             
             # إذا تم حل البلاغ، نحدث مقاييس الأداء أيضاً
@@ -50,19 +54,7 @@ class AnalyticsService:
         """
         try:
             metrics_to_update = {
-                # مقياس نجاح المطابقة
                 'match_success_rate': self._calculate_match_success_rate(),
-                
-                # مقياس وقت الاستجابة
-                'response_time': self._calculate_response_time(),
-                
-                # مقياس معدل الأخطاء
-                'error_rate': self._calculate_error_rate(),
-                
-                # مقياس رضا المستخدمين
-                'user_satisfaction': self._calculate_user_satisfaction(),
-                
-                # مقياس معدل الحل
                 'resolution_rate': self._calculate_resolution_rate(),
             }
             
@@ -74,12 +66,13 @@ class AnalyticsService:
                         'current_value': value,
                         'category': self._get_metric_category(metric_name),
                         'unit': '%',
+                        'target_value': 90.0,
                     }
                 )
                 
                 if not created:
                     metric.current_value = value
-                    metric.save()
+                    metric.save(update_fields=['current_value', 'last_updated'])
             
             logger.info("تم تحديث مقاييس الأداء")
             return True
@@ -90,9 +83,6 @@ class AnalyticsService:
     
     def _calculate_match_success_rate(self):
         """حساب معدل نجاح المطابقة"""
-        from matching.models import MatchResult
-        from django.db.models import Count
-        
         accepted = MatchResult.objects.filter(match_status='accepted').count()
         reviewed = MatchResult.objects.filter(
             match_status__in=['accepted', 'rejected', 'false_positive']
@@ -102,33 +92,8 @@ class AnalyticsService:
             return (accepted / reviewed) * 100
         return 0.0
     
-    def _calculate_response_time(self):
-        """حساب متوسط زمن الاستجابة (بناءً على سجلات المطابقة)"""
-        from matching.models import MatchingAuditLog
-        from django.db.models import Avg
-        
-        # نحسب متوسط وقت المعالجة من سجلات المطابقة
-        avg_time = MatchingAuditLog.objects.filter(
-            action_type='match_process'
-        ).aggregate(Avg('processing_time'))['processing_time__avg']
-        
-        return avg_time if avg_time else 0.0
-    
-    def _calculate_error_rate(self):
-        """حساب معدل الأخطاء"""
-        # حالياً لا يوجد سجل مركزي للأخطاء، نعيد 0 بدلاً من رقم وهمي
-        return 0.0
-    
-    def _calculate_user_satisfaction(self):
-        """حساب رضا المستخدمين"""
-        # يتطلب نظام تقييم لم يتم بناؤه بعد
-        return 0.0
-    
     def _calculate_resolution_rate(self):
         """حساب معدل حل البلاغات"""
-        from reports.models import Report
-        from django.db.models import Count
-        
         resolved = Report.objects.filter(status='resolved').count()
         total = Report.objects.count()
         
@@ -140,9 +105,6 @@ class AnalyticsService:
         """الحصول على وصف المقياس"""
         descriptions = {
             'match_success_rate': 'نسبة المطابقات المقبولة من إجمالي المطابقات المراجعة',
-            'response_time': 'نسبة الطلبات التي تمت معالجتها في أقل من 3 ثواني',
-            'error_rate': 'نسبة الطلبات التي فشلت في المعالجة',
-            'user_satisfaction': 'تقدير رضا المستخدمين عن النظام',
             'resolution_rate': 'نسبة البلاغات التي تم حلها من إجمالي البلاغات',
         }
         return descriptions.get(metric_name, 'مقياس أداء النظام')
@@ -151,9 +113,6 @@ class AnalyticsService:
         """الحصول على فئة المقياس"""
         categories = {
             'match_success_rate': 'matching',
-            'response_time': 'system',
-            'error_rate': 'system',
-            'user_satisfaction': 'user',
             'resolution_rate': 'report',
         }
         return categories.get(metric_name, 'system')
@@ -168,6 +127,18 @@ class AnalyticsService:
                 date__gte=start_date,
                 date__lte=end_date
             ).order_by('date')
+            
+            if not daily_stats:
+                return {
+                    'period': {
+                        'start': start_date.isoformat(),
+                        'end': end_date.isoformat(),
+                        'days': (end_date - start_date).days + 1
+                    },
+                    'summary': {},
+                    'trends': {},
+                    'insights': ["لا توجد بيانات للفترة المحددة"]
+                }
             
             # تحليل البيانات
             report_data = {
@@ -240,36 +211,40 @@ class AnalyticsService:
         changes = [data[i] - data[i-1] for i in range(1, len(data))]
         avg_change = sum(changes) / len(changes)
         
-        if avg_change > 0.5:
+        # تحديد العتبة بناءً على حجم البيانات
+        threshold = max(1.0, sum(data) / len(data) * 0.1)  # 10% من المتوسط
+        
+        if avg_change > threshold:
             return 'increasing'
-        elif avg_change < -0.5:
+        elif avg_change < -threshold:
             return 'decreasing'
         else:
             return 'stable'
             
     def get_user_trust_distribution(self):
         """توزيع درجات ثقة المستخدمين"""
-        from accounts.models import User
-        from django.db.models import Count, Case, When, Value, IntegerField
+        from django.db.models import Count, Case, When, IntegerField
         
-        return User.objects.aggregate(
+        # استخدام SQL آمن
+        distribution = User.objects.aggregate(
             very_high=Count(Case(When(trust_score__gte=90, then=1), output_field=IntegerField())),
             high=Count(Case(When(trust_score__gte=70, trust_score__lt=90, then=1), output_field=IntegerField())),
             medium=Count(Case(When(trust_score__gte=40, trust_score__lt=70, then=1), output_field=IntegerField())),
             low=Count(Case(When(trust_score__lt=40, then=1), output_field=IntegerField())),
         )
+        
+        return {k: v for k, v in distribution.items()}
 
     def get_report_demographics(self):
         """تحليلات ديموغرافية للبلاغات"""
         from reports.models import Report
-        from django.db.models import Count
         
-        gender_dist = Report.objects.values('gender').annotate(count=Count('id')).order_by('gender')
-        health_dist = Report.objects.values('health_condition').annotate(count=Count('id')).order_by('health_condition')
-        
+        gender_dist = Report.objects.values('person__gender').annotate(count=Count('report_id')).order_by('person__gender')
+        health_dist = Report.objects.values('health_at_loss').annotate(count=Count('report_id')).order_by('health_at_loss')
+
         return {
-            'gender': {item['gender']: item['count'] for item in gender_dist},
-            'health_condition': {item['health_condition']: item['count'] for item in health_dist if item['health_condition']}
+            'gender': {item['person__gender'] or 'unknown': item['count'] for item in gender_dist},
+            'health_condition': {item['health_at_loss'] or 'غير محدد': item['count'] for item in health_dist if item['count'] > 0}
         }
 
     def cleanup_old_data(self, days_to_keep=90):

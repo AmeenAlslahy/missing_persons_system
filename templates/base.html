@@ -1220,7 +1220,7 @@
 
         function loadRecentReports() {
             $.ajax({
-                url: '/api/reports/?limit=5&ordering=-created_at',
+                url: '/api/reports/reports/?limit=5&ordering=-created_at',
                 method: 'GET',
                 success: function (data) {
                     const tbody = $('#recentReportsTable');
@@ -1479,7 +1479,7 @@
 
                 showLoading();
                 $.ajax({
-                    url: '/api/reports/',
+                    url: '/api/reports/reports/',
                     method: 'POST',
                     data: formData,
                     processData: false,

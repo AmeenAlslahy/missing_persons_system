@@ -269,11 +269,13 @@
                 </div>
                 <div class="user-profile d-flex align-items-center ms-3">
                     <div class="text-end me-2 d-none d-sm-block">
-                        <div class="fw-bold">{{ user.full_name }}</div>
-                        <small class="text-muted">{{ user.get_user_role_display }}</small>
+                        <div class="fw-bold">{{ request.user.first_name }} {{ request.user.last_name }}</div>
+                        <small class="text-muted">{{ request.user.get_user_type_display }}</small>
                     </div>
-                    <img src="{% if user.profile_picture %}{{ user.profile_picture.url }}{% else %}https://ui-avatars.com/api/?name={{ user.full_name }}&background=random{% endif %}"
-                        class="rounded-circle" width="40" height="40" alt="Avatar">
+                    <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center" 
+                         style="width: 40px; height: 40px; font-weight: bold;">
+                        {{ request.user.first_name|first|default:'م' }}{{ request.user.last_name|first|default:'س' }}
+                    </div>
                 </div>
             </div>
         </div>
@@ -312,7 +314,7 @@
                         if (n.related_match) {
                             link = `/admin-dashboard/matches/?id=${n.related_match.id}`;
                         } else if (n.related_report) {
-                            link = `/admin-dashboard/reports/?id=${n.related_report.id}`;
+                            link = `/admin-dashboard/reports/?id=${n.related_report.report_id}`;
                         } else if (n.action_url) {
                             link = n.action_url;
                         }

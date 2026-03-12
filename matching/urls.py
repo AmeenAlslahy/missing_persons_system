@@ -4,10 +4,11 @@ from . import views
 
 router = DefaultRouter()
 router.register(r'matches', views.MatchResultViewSet, basename='match')
-router.register(r'config', views.MatchingConfigViewSet)
-router.register(r'embeddings', views.FaceEmbeddingViewSet, basename='embedding')
 
 urlpatterns = [
     path('', include(router.urls)),
-    path('stats/', views.MatchStatisticsView.as_view(), name='matching-stats'),
+    path('statistics/', views.MatchStatisticsView.as_view(), name='matching-statistics'),
+    path('stats/', views.MatchStatisticsView.as_view(), name='matching-stats'),  # alias
 ]
+
+app_name = 'matching'

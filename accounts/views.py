@@ -8,31 +8,40 @@ from django.utils.translation import gettext_lazy as _
 from django.contrib.auth import logout
 from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
+import random
+from django.utils import timezone
+from datetime import timedelta
+from django.core.cache import cache
+from django.conf import settings
+from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
 
-from .models import User, VolunteerProfile, AuditLog
+from .models import User
 from .serializers import (
-    UserRegistrationSerializer, UserLoginSerializer, 
+    UserRegistrationSerializer, UserLoginSerializer,
     UserProfileSerializer, UserUpdateSerializer,
-    VolunteerProfileSerializer, PasswordChangeSerializer,
-    AuditLogSerializer, UserAdminActionSerializer
+    PasswordChangeSerializer
 )
+
+# Rate limiter مخصص لـ OTP
+class OTPRateThrottle(UserRateThrottle):
+    rate = '3/hour'  # 3 محاولات في الساعة
 
 
 class UserRegistrationView(generics.CreateAPIView):
     """تسجيل مستخدم جديد"""
     serializer_class = UserRegistrationSerializer
     permission_classes = [permissions.AllowAny]
-    
+    throttle_classes = [AnonRateThrottle]  # منع إنشاء حسابات كثيرة
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        
-        # إنشاء توكنات JWT
+
         refresh = RefreshToken.for_user(user)
-        
+
         return Response({
-            'user': UserProfileSerializer(user).data,
+            'user': UserProfileSerializer(user, context={'request': request}).data,
             'refresh': str(refresh),
             'access': str(refresh.access_token),
             'message': _('تم إنشاء الحساب بنجاح')
@@ -42,20 +51,17 @@ class UserRegistrationView(generics.CreateAPIView):
 class UserLoginView(TokenObtainPairView):
     """تسجيل الدخول"""
     serializer_class = UserLoginSerializer
-    
+    throttle_classes = [AnonRateThrottle]  # منع محاولات الدخول المتكررة
+
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
-        
-        # تحديث آخر دخول
-        user.update_last_login()
-        
-        # إنشاء توكنات
+
         refresh = RefreshToken.for_user(user)
-        
+
         return Response({
-            'user': UserProfileSerializer(user).data,
+            'user': UserProfileSerializer(user, context={'request': request}).data,
             'refresh': str(refresh),
             'access': str(refresh.access_token),
             'message': _('تم تسجيل الدخول بنجاح')
@@ -65,46 +71,32 @@ class UserLoginView(TokenObtainPairView):
 class UserLogoutView(APIView):
     """تسجيل الخروج"""
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def post(self, request):
         try:
             refresh_token = request.data.get("refresh")
             if refresh_token:
+                # التحقق من أن token يخص المستخدم الحالي
                 token = RefreshToken(refresh_token)
+                if str(token.user_id) != str(request.user.id):
+                    return Response({
+                        'error': _('Token غير صالح لهذا المستخدم')
+                    }, status=status.HTTP_400_BAD_REQUEST)
                 token.blacklist()
             
             logout(request)
-            
-            # تسجيل في سجل التدقيق
-            request.user.audit_logs.create(
-                action_type='LOGOUT',
-                action_details='تسجيل الخروج',
-                ip_address=self.get_client_ip(request),
-                user_agent=request.META.get('HTTP_USER_AGENT', '')
-            )
-            
             return Response({
                 'message': _('تم تسجيل الخروج بنجاح')
             }, status=status.HTTP_200_OK)
         except Exception as e:
-            return Response({
-                'error': str(e)
-            }, status=status.HTTP_400_BAD_REQUEST)
-    
-    def get_client_ip(self, request):
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0]
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class UserProfileView(generics.RetrieveUpdateAPIView):
     """عرض وتحديث الملف الشخصي"""
     serializer_class = UserProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get_object(self):
         return self.request.user
 
@@ -113,146 +105,46 @@ class UserUpdateView(generics.UpdateAPIView):
     """تحديث بيانات المستخدم"""
     serializer_class = UserUpdateSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get_object(self):
         return self.request.user
 
 
-class PasswordChangeView(generics.UpdateAPIView):
+class PasswordChangeView(APIView):
     """تغيير كلمة المرور"""
-    serializer_class = PasswordChangeSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
-    def get_object(self):
-        return self.request.user
-    
-    def update(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        
-        return Response({
-            'message': _('تم تغيير كلمة المرور بنجاح')
-        }, status=status.HTTP_200_OK)
 
-
-class VolunteerListView(generics.ListAPIView):
-    """قائمة المتطوعين"""
-    serializer_class = VolunteerProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    
-    def get_queryset(self):
-        # إرجاع المتطوعين النشطين فقط
-        return VolunteerProfile.objects.filter(
-            user__user_role__in=['volunteer', 'admin', 'super_admin'],
-            is_active_volunteer=True
-        ).select_related('user')
-
-
-class VolunteerDetailView(generics.RetrieveAPIView):
-    """تفاصيل متطوع"""
-    serializer_class = VolunteerProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    lookup_field = 'id'
-    
-    def get_queryset(self):
-        return VolunteerProfile.objects.all().select_related('user')
+    def post(self, request):
+        serializer = PasswordChangeSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                'message': _('تم تغيير كلمة المرور بنجاح')
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class VerificationRequestView(APIView):
-    """طلب التحقق من الهوية"""
+    """تقديم طلب تحقق من الهوية"""
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def post(self, request):
         user = request.user
         
-        if user.verification_status != User.VerificationStatus.PENDING:
+        # التحقق من توثيق رقم الهاتف أولاً
+        if not user.phone_verified:
             return Response({
-                'error': _('لقد قمت بالفعل بطلب التحقق')
+                'error': _('يجب توثيق رقم الهاتف أولاً')
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        national_id = request.data.get('national_id')
-        if not national_id:
-            return Response({
-                'error': _('يجب إدخال رقم الهوية الوطنية')
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # هنا يمكن إضافة تحقق من صحة الرقم الوطني
-        
-        user.national_id = national_id
-        user.verification_status = User.VerificationStatus.PENDING
+        # يمكن هنا إضافة منطق لرفع الوثائق
+        user.verification_status = 'pending'
         user.save()
         
-        # تسجيل في سجل التدقيق
-        user.audit_logs.create(
-            action_type='VERIFICATION_REQUEST',
-            action_details=f'طلب التحقق برقم الهوية: {national_id}'
-        )
-        
-        # هنا يمكن إرسال إشعار للمشرفين
-        
         return Response({
-            'message': _('تم إرسال طلب التحقق بنجاح، سيتم مراجعته من قبل المشرفين')
+            'message': _('تم تقديم طلب التحقق بنجاح. سيقوم المسؤول بمراجعة طلبك.'),
+            'verification_status': user.verification_status
         }, status=status.HTTP_200_OK)
-
-
-class AdminVerifyUserView(APIView):
-    """تحقق المشرف من مستخدم"""
-    permission_classes = [permissions.IsAdminUser]
-    
-    def post(self, request, user_id):
-        try:
-            user = User.objects.get(id=user_id)
-        except User.DoesNotExist:
-            return Response({
-                'error': _('المستخدم غير موجود')
-            }, status=status.HTTP_404_NOT_FOUND)
-        
-        action = request.data.get('action')  # accept أو reject
-        notes = request.data.get('notes', '')
-        
-        if action == 'accept':
-            user.verification_status = User.VerificationStatus.VERIFIED
-            
-            # إذا كان لديه صورة شخصية، يمكن تحويله لمتطوع
-            if user.profile_picture and user.user_role == User.Role.USER:
-                user.user_role = User.Role.VOLUNTEER
-                VolunteerProfile.objects.get_or_create(user=user)
-            
-            message = _('تم التحقق من المستخدم بنجاح')
-        elif action == 'reject':
-            user.verification_status = User.VerificationStatus.REJECTED
-            message = _('تم رفض طلب التحقق')
-        else:
-            return Response({
-                'error': _('الإجراء غير صالح')
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        user.save()
-        
-        # تسجيل في سجل التدقيق
-        AuditLog.objects.create(
-            user=request.user,
-            action_type=f'VERIFICATION_{action.upper()}',
-            action_details=f'تحقق من المستخدم {user.email}: {notes}',
-            ip_address=self.get_client_ip(request)
-        )
-        
-        # إرسال إشعار للمستخدم
-        # TODO: إرسال إشعار
-        
-        return Response({
-            'message': message,
-            'user': UserProfileSerializer(user).data
-        })
-    
-    def get_client_ip(self, request):
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0]
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -261,74 +153,94 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserProfileSerializer
     permission_classes = [permissions.IsAdminUser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['verification_status', 'user_role', 'gender', 'is_active', 'is_blocked']
-    search_fields = ['email', 'full_name', 'phone', 'national_id', 'governorate', 'district']
-    ordering_fields = ['date_joined', 'last_login', 'trust_score']
+    filterset_fields = ['is_active', 'user_type', 'verification_status', 'home_governorate']
+    search_fields = ['phone', 'first_name', 'last_name', 'email']
+    ordering_fields = ['date_joined', 'last_login']
+    
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
 
-    @action(detail=True, methods=['post'])
-    def admin_action(self, request, pk=None):
-        """إجراءات المشرف: حظر، فك حظر، توثيق، تغيير دور، تحديث ثقة"""
-        user = self.get_object()
-        serializer = UserAdminActionSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+
+class SendOTPView(APIView):
+    """إرسال رمز التحقق (OTP) للهاتف"""
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_classes = [OTPRateThrottle]  # 3 محاولات كحد أقصى
+
+    def post(self, request):
+        user = request.user
         
-        action_type = serializer.validated_data['action']
-        reason = serializer.validated_data.get('reason', '')
-        new_role = serializer.validated_data.get('new_role', '')
+        # التحقق من آخر طلب
+        if user.last_otp_request and (timezone.now() - user.last_otp_request) < timedelta(minutes=2):
+            return Response({
+                'error': _('يجب الانتظار دقيقتين بين كل طلب وآخر')
+            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
         
-        if action_type == 'block':
-            user.is_blocked = True
-            user.blocking_reason = reason
-            user.is_active = False
-            msg = _('تم حظر المستخدم بنجاح')
-        elif action_type == 'unblock':
-            user.is_blocked = False
-            user.blocking_reason = None
-            user.is_active = True
-            msg = _('تم رفع الحظر عن المستخدم بنجاح')
-        elif action_type == 'verify':
-            user.verification_status = User.VerificationStatus.VERIFIED
-            msg = _('تم توثيق حساب المستخدم')
-        elif action_type == 'reject_verification':
-            user.verification_status = User.VerificationStatus.REJECTED
-            msg = _('تم رفض توثيق حساب المستخدم')
-        elif action_type == 'change_role':
-            if new_role in [r[0] for r in User.Role.choices]:
-                user.user_role = new_role
-                msg = _(f'تم تغيير دور المستخدم إلى {user.get_user_role_display()}')
-            else:
-                return Response({'error': 'Invalid role'}, status=status.HTTP_400_BAD_REQUEST)
-        elif action_type == 'recalculate_trust':
-            user.update_trust_score()
-            msg = _(f'تم تحديث درجة الثقة: {user.trust_score:.1f}%')
-            
+        # إنشاء رمز عشوائي من 6 أرقام
+        otp = str(random.randint(100000, 999999))
+        
+        # تخزين الرمز في الذاكرة المؤقتة (بدلاً من قاعدة البيانات)
+        cache.set(f'otp_{user.id}', otp, timeout=600)  # 10 دقائق
+        
+        # تحديث وقت آخر طلب
+        user.last_otp_request = timezone.now()
+        user.otp_attempts = 0  # إعادة تعيين المحاولات
         user.save()
         
-        # تسجيل في سجل التدقيق
-        AuditLog.objects.create(
-            user=request.user,
-            action_type=f'ADMIN_{action_type.upper()}',
-            action_details=f'إجراء {action_type} على {user.email}. السبب: {reason}',
-            ip_address=self.get_client_ip(request),
-            user_agent=request.META.get('HTTP_USER_AGENT', '')
-        )
+        # هنا يمكنك إرسال الـ OTP عبر SMS باستخدام خدمة خارجية
+        # مثال: send_sms(user.phone, f"رمز التحقق الخاص بك هو: {otp}")
         
-        return Response({'message': msg, 'user': UserProfileSerializer(user).data})
-
-    def get_client_ip(self, request):
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0]
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
+        # للتطوير فقط - في الإنتاج يجب إزالة هذا السطر
+        print(f"OTP for {user.phone}: {otp}")  # TODO: Remove in production
+        
+        return Response({
+            'message': _('تم إرسال رمز التحقق إلى هاتفك بنجاح')
+        }, status=status.HTTP_200_OK)
 
 
-class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet لسجلات التدقيق (للمشرفين)"""
-    queryset = AuditLog.objects.all().order_by('-created_at')
-    serializer_class = AuditLogSerializer
-    permission_classes = [permissions.IsAdminUser]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['user', 'action_type']
-    search_fields = ['action_details', 'user__full_name', 'user__email', 'ip_address']
+class VerifyOTPView(APIView):
+    """التحقق من الرمز (OTP)"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        otp_provided = request.data.get('otp')
+
+        if not otp_provided:
+            return Response({
+                'error': _('يجب إدخال الرمز')
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # التحقق من عدد المحاولات
+        if user.otp_attempts >= 5:
+            return Response({
+                'error': _('لقد تجاوزت الحد الأقصى من المحاولات. الرجاء طلب رمز جديد.')
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # الحصول على الرمز من الذاكرة المؤقتة
+        stored_otp = cache.get(f'otp_{user.id}')
+        
+        if stored_otp and stored_otp == otp_provided:
+            # رمز صحيح
+            user.phone_verified = True
+            user.otp_attempts = 0
+            user.save()
+            
+            # حذف الرمز من الذاكرة
+            cache.delete(f'otp_{user.id}')
+            
+            return Response({
+                'message': _('تم توثيق رقم الهاتف بنجاح'),
+                'phone_verified': True
+            }, status=status.HTTP_200_OK)
+        
+        # رمز خاطئ - زيادة عدد المحاولات
+        user.otp_attempts += 1
+        user.save()
+        
+        remaining_attempts = 5 - user.otp_attempts
+        return Response({
+            'error': _('رمز التحقق غير صحيح'),
+            'remaining_attempts': remaining_attempts
+        }, status=status.HTTP_400_BAD_REQUEST)

@@ -265,7 +265,7 @@
             serverSide: true,
             processing: true,
             ajax: {
-                url: '/api/reports/',
+                url: '/api/reports/reports/',
                 data: function (d) {
                     d.search = $('#searchFilter').val();
                     d.report_type = $('#typeFilter').val();
@@ -350,7 +350,7 @@
         showLoading();
 
         $.ajax({
-            url: `/api/reports/${id}/`,
+            url: `/api/reports/reports/${id}/`,
             success: function (data) {
                 populateReportModal(data);
                 const modal = new bootstrap.Modal(document.getElementById('reportDetailsModal'));
@@ -405,7 +405,7 @@
 
         showLoading();
         $.ajax({
-            url: `/api/reports/${currentReportId}/`,
+            url: `/api/reports/reports/${currentReportId}/`,
             method: 'PATCH',
             data: { status: newStatus },
             success: function () {

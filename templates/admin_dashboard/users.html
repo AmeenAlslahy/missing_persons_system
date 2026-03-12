@@ -20,11 +20,12 @@
                 <input type="text" name="search" class="form-control" placeholder="بحث بالاسم، الإيميل أو الهاتف...">
             </div>
             <div class="col-md-2">
-                <select name="user_role" class="form-select">
+                <select name="user_type" class="form-select">
                     <option value="">كل الأدوار</option>
                     <option value="user">مستخدم عادي</option>
                     <option value="volunteer">متطوع</option>
                     <option value="admin">مشرف</option>
+                    <option value="super_admin">مدير نظام</option>
                 </select>
             </div>
             <div class="col-md-2">
@@ -36,10 +37,10 @@
                 </select>
             </div>
             <div class="col-md-2">
-                <select name="is_blocked" class="form-select">
-                    <option value="">حالة الحظر</option>
-                    <option value="false">نشط</option>
-                    <option value="true">محظور</option>
+                <select name="is_active" class="form-select">
+                    <option value="">حالة الحساب</option>
+                    <option value="true">نشط</option>
+                    <option value="false">محظور</option>
                 </select>
             </div>
             <div class="col-md-2">
@@ -56,10 +57,11 @@
                 <tr>
                     <th>المستخدم</th>
                     <th>الهاتف</th>
-                    <th>السكن</th>
                     <th>الدور</th>
-                    <th>التوثيق</th>
-                    <th>الحظر</th>
+                    <th>توثيق الهوية</th>
+                    <th>توثيق الهاتف</th>
+                    <th>درجة الثقة</th>
+                    <th>الحالة</th>
                     <th>الإجراءات</th>
                 </tr>
             </thead>
@@ -91,10 +93,11 @@
 
                     <div id="role-selector-div" class="mb-3 d-none">
                         <label class="form-label fw-bold">اختر الدور الجديد</label>
-                        <select class="form-select" id="new-user-role">
+                        <select class="form-select" id="new-user-type">
                             <option value="user">مستخدم عادي</option>
                             <option value="volunteer">متطوع</option>
                             <option value="admin">مشرف</option>
+                            <option value="super_admin">مدير نظام</option>
                         </select>
                     </div>
 
@@ -103,17 +106,11 @@
                         <textarea class="form-control" id="action-reason" rows="3"
                             placeholder="اكتب السبب هنا..."></textarea>
                     </div>
-
-                    <div id="trust-info-div" class="alert alert-info d-none">
-                        <i class="fas fa-info-circle me-1"></i> سيتم إعادة حساب درجة الثقة بناءً على إجمالي البلاغات
-                        ونسبة الحلول.
-                    </div>
                 </form>
             </div>
             <div class="modal-footer bg-light border-0">
                 <button type="button" class="btn btn-secondary px-4" data-bs-dismiss="modal">إلغاء</button>
-                <button type="button" class="btn btn-primary px-4 fw-bold" id="confirm-action-btn">تنفيذ
-                    الإجراء</button>
+                <button type="button" class="btn btn-primary px-4 fw-bold" id="confirm-action-btn">تنفيذ الإجراء</button>
             </div>
         </div>
     </div>
@@ -124,16 +121,24 @@
 <script>
     $(document).ready(function () {
         let currentPage = 1;
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}';
 
         function loadUsers(page = 1) {
             let formData = $('#filter-form').serialize();
             $.ajax({
                 url: `/api/accounts/users/?page=${page}&${formData}`,
                 method: 'GET',
+                headers: {
+                    'X-CSRFToken': csrfToken
+                },
                 success: function (response) {
                     renderTable(response.results);
                     renderPagination(response);
                     $('#table-info').text(`عرض ${response.results.length} من إجمالي ${response.count} مستخدم`);
+                },
+                error: function (xhr) {
+                    console.error('Error loading users:', xhr);
+                    $('#users-table-body').html('<tr><td colspan="8" class="text-center py-4 text-danger">حدث خطأ في تحميل البيانات</td></tr>');
                 }
             });
         }
@@ -141,84 +146,125 @@
         function renderTable(users) {
             let html = '';
             users.forEach(user => {
-                const roles = {
-                    'user': { label: 'مستخدم', class: 'bg-soft-secondary text-secondary' },
-                    'volunteer': { label: 'متطوع', class: 'bg-soft-info text-info' },
-                    'admin': { label: 'مشرف', class: 'bg-soft-danger text-danger' },
-                    'super_admin': { label: 'مشرف رئيسي', class: 'bg-danger' }
+                // تحديد لون ونص الدور
+                const userTypeMap = {
+                    'user': { label: 'مستخدم عادي', class: 'bg-secondary' },
+                    'volunteer': { label: 'متطوع', class: 'bg-info' },
+                    'admin': { label: 'مشرف', class: 'bg-primary' },
+                    'super_admin': { label: 'مدير نظام', class: 'bg-danger' }
                 };
-                const userRole = roles[user.user_role] || roles['user'];
+                const userType = userTypeMap[user.user_type] || userTypeMap['user'];
 
-                let verifyClass = user.verification_status === 'verified' ? 'bg-success' : (user.verification_status === 'pending' ? 'bg-warning' : 'bg-danger');
-                let blockBadge = user.is_blocked ? '<span class="badge bg-danger rounded-pill">محظور</span>' : '<span class="badge bg-success rounded-pill">نشط</span>';
+                // حالة توثيق الهوية
+                const verificationMap = {
+                    'verified': { label: 'موثق', class: 'bg-success' },
+                    'pending': { label: 'قيد الانتظار', class: 'bg-warning' },
+                    'rejected': { label: 'مرفوض', class: 'bg-danger' },
+                    'unverified': { label: 'غير موثق', class: 'bg-secondary' }
+                };
+                const verification = verificationMap[user.verification_status] || verificationMap['unverified'];
 
-                // Trust Score Badge
-                let trustBadge = 'bg-secondary';
-                if (user.trust_score > 80) trustBadge = 'bg-success';
-                else if (user.trust_score > 50) trustBadge = 'bg-primary';
-                else if (user.trust_score > 20) trustBadge = 'bg-warning';
-                else if (user.total_reports > 5) trustBadge = 'bg-danger';
+                // حالة توثيق الهاتف
+                const phoneVerifiedClass = user.phone_verified ? 'bg-success' : 'bg-secondary';
+                const phoneVerifiedText = user.phone_verified ? 'موثق' : 'غير موثق';
+
+                // حالة الحساب
+                const activeClass = user.is_active ? 'bg-success' : 'bg-danger';
+                const activeText = user.is_active ? 'نشط' : 'محظور';
+
+                // لون درجة الثقة
+                let trustClass = 'bg-secondary';
+                if (user.trust_score > 80) trustClass = 'bg-success';
+                else if (user.trust_score > 50) trustClass = 'bg-primary';
+                else if (user.trust_score > 20) trustClass = 'bg-warning';
+                else trustClass = 'bg-danger';
 
                 html += `
                 <tr>
                     <td>
                         <div class="d-flex align-items-center">
-                            <div class="position-relative">
-                                <img src="${user.profile_picture || 'https://ui-avatars.com/api/?name=' + user.full_name}" class="rounded-circle border" width="40" height="40">
-                                <span class="position-absolute bottom-0 end-0 p-1 bg-success border border-light rounded-circle" style="width: 10px; height: 10px;"></span>
-                            </div>
                             <div class="ms-3">
-                                <div class="fw-bold">${user.full_name}</div>
-                                <div class="text-muted small">${user.email}</div>
+                                <div class="fw-bold">${user.full_name || user.first_name + ' ' + user.last_name}</div>
+                                <div class="text-muted small">${user.email || 'لا يوجد بريد'}</div>
                             </div>
                         </div>
                     </td>
                     <td><div class="small">${user.phone || '---'}</div></td>
-                    <td><span class="badge ${userRole.class}">${userRole.label}</span></td>
-                    <td><span class="badge ${verifyClass}">${user.verification_status === 'verified' ? 'موثق' : (user.verification_status === 'pending' ? 'قيد الانتظار' : 'مرفوض')}</span></td>
+                    <td><span class="badge ${userType.class}">${userType.label}</span></td>
+                    <td><span class="badge ${verification.class}">${verification.label}</span></td>
+                    <td><span class="badge ${phoneVerifiedClass}">${phoneVerifiedText}</span></td>
                     <td>
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="badge ${trustBadge}">${user.trust_score.toFixed(1)}%</span>
-                            <div class="small text-muted">(${user.resolved_reports}/${user.total_reports})</div>
-                        </div>
+                        <span class="badge ${trustClass}">${user.trust_score.toFixed(1)}%</span>
                     </td>
-                    <td>${blockBadge}</td>
+                    <td><span class="badge ${activeClass}">${activeText}</span></td>
                     <td>
                         <div class="dropdown">
-                            <button class="btn btn-sm btn-light border dropdown-toggle" type="button" data-bs-toggle="dropdown"><i class="fas fa-cog"></i></button>
+                            <button class="btn btn-sm btn-light border dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                <i class="fas fa-cog"></i>
+                            </button>
                             <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0">
-                                ${user.verification_status === 'pending' ? `<li><a class="dropdown-item" href="#" onclick="openActionModal(${user.id}, 'verify', 'توثيق الحساب')"><i class="fas fa-check-circle text-success me-2"></i>توثيق</a></li>` : ''}
-                                <li><a class="dropdown-item" href="#" onclick="openActionModal(${user.id}, 'change_role', 'تغيير دور المستخدم', '${user.user_role}')"><i class="fas fa-user-tag me-2"></i>تغيير الدور</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="openActionModal(${user.id}, 'recalculate_trust', 'إعادة حساب الثقة')"><i class="fas fa-sync-alt me-2"></i>تحديث الثقة</a></li>
+                                ${user.verification_status === 'pending' ? `
+                                    <li>
+                                        <a class="dropdown-item" href="#" onclick="openActionModal(${user.id}, 'verify', 'توثيق الهوية')">
+                                            <i class="fas fa-check-circle text-success me-2"></i>توثيق الهوية
+                                        </a>
+                                    </li>
+                                ` : ''}
+                                <li>
+                                    <a class="dropdown-item" href="#" onclick="openActionModal(${user.id}, 'change_type', 'تغيير نوع المستخدم', '${user.user_type}')">
+                                        <i class="fas fa-user-tag me-2"></i>تغيير الدور
+                                    </a>
+                                </li>
                                 <li><hr class="dropdown-divider"></li>
-                                ${user.is_blocked ?
-                        `<li><a class="dropdown-item text-success" href="#" onclick="openActionModal(${user.id}, 'unblock', 'رفع الحظر')"><i class="fas fa-user-check me-2"></i>رفع الحظر</a></li>` :
-                        `<li><a class="dropdown-item text-danger" href="#" onclick="openActionModal(${user.id}, 'block', 'حظر المستخدم')"><i class="fas fa-user-slash me-2"></i>حظر</a></li>`
-                    }
+                                ${user.is_active ?
+                                    `<li>
+                                        <a class="dropdown-item text-danger" href="#" onclick="openActionModal(${user.id}, 'block', 'حظر المستخدم')">
+                                            <i class="fas fa-user-slash me-2"></i>حظر
+                                        </a>
+                                    </li>` :
+                                    `<li>
+                                        <a class="dropdown-item text-success" href="#" onclick="openActionModal(${user.id}, 'unblock', 'رفع الحظر')">
+                                            <i class="fas fa-user-check me-2"></i>رفع الحظر
+                                        </a>
+                                    </li>`
+                                }
                             </ul>
                         </div>
                     </td>
                 </tr>
             `;
             });
-            $('#users-table-body').html(html || '<tr><td colspan="7" class="text-center py-4">لا يوجد مستخدمين مطابقين</td></tr>');
+            $('#users-table-body').html(html || '<tr><td colspan="8" class="text-center py-4">لا يوجد مستخدمين مطابقين</td></tr>');
         }
 
-        window.openActionModal = function (userId, action, title, currentRole = '') {
+        function renderPagination(data) {
+            let html = '';
+            if (data.previous) {
+                html += `<li class="page-item"><a class="page-link" href="#" data-page="${currentPage - 1}">السابق</a></li>`;
+            }
+            if (data.next) {
+                html += `<li class="page-item"><a class="page-link" href="#" data-page="${currentPage + 1}">التالي</a></li>`;
+            }
+            $('#pagination-nav ul').html(html);
+
+            $('.page-link').click(function (e) {
+                e.preventDefault();
+                currentPage = $(this).data('page');
+                loadUsers(currentPage);
+            });
+        }
+
+        window.openActionModal = function (userId, action, title, currentType = '') {
             $('#target-user-id').val(userId);
             $('#target-action').val(action);
             $('#actionModalTitle').text(title);
             $('#action-reason').val('');
 
-            // Toggle UI based on action
             $('#role-selector-div').addClass('d-none');
-            $('#trust-info-div').addClass('d-none');
 
-            if (action === 'change_role') {
+            if (action === 'change_type') {
                 $('#role-selector-div').removeClass('d-none');
-                $('#new-user-role').val(currentRole);
-            } else if (action === 'recalculate_trust') {
-                $('#trust-info-div').removeClass('d-none');
+                $('#new-user-type').val(currentType);
             }
 
             $('#userActionModal').modal('show');
@@ -228,25 +274,37 @@
             let userId = $('#target-user-id').val();
             let action = $('#target-action').val();
             let reason = $('#action-reason').val();
-            let newRole = $('#new-user-role').val();
+            let newType = $('#new-user-type').val();
 
             $.ajax({
-                url: `/api/accounts/users/${userId}/admin_action/`,
-                method: 'POST',
+                url: `/api/accounts/users/${userId}/`,
+                method: 'PATCH',
                 data: JSON.stringify({
-                    action: action,
-                    reason: reason,
-                    new_role: (action === 'change_role' ? newRole : '')
+                    ...(action === 'change_type' && { user_type: newType }),
+                    ...(action === 'block' && { is_active: false }),
+                    ...(action === 'unblock' && { is_active: true }),
+                    ...(action === 'verify' && { verification_status: 'verified' })
                 }),
                 contentType: 'application/json',
-                headers: { 'X-CSRFToken': '{{ csrf_token }}' },
-                success: function (response) {
+                headers: {
+                    'X-CSRFToken': csrfToken
+                },
+                success: function () {
                     $('#userActionModal').modal('hide');
                     loadUsers(currentPage);
-                    alert(response.message);
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'تم بنجاح',
+                        text: 'تم تنفيذ الإجراء بنجاح',
+                        timer: 2000
+                    });
                 },
                 error: function (xhr) {
-                    alert('حدث خطأ: ' + (xhr.responseJSON ? xhr.responseJSON.detail : 'خطأ غير معروف'));
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'خطأ',
+                        text: xhr.responseJSON?.detail || 'حدث خطأ غير معروف'
+                    });
                 }
             });
         });

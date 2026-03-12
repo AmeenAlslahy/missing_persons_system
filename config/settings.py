@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_filters',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',  # إضافة для logout
     'drf_yasg',
     'django_extensions',
     
@@ -41,8 +42,8 @@ INSTALLED_APPS = [
     'analytics',
     'matching',
     'admin_dashboard',
+    'locations',
 ]
-
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -78,6 +79,8 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # إضافة context processor مخصص للمستخدم
+                'accounts.context_processors.user_profile',
             ],
         },
     },
@@ -98,7 +101,6 @@ DATABASES = {
         },
     }
 }
-
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -156,24 +158,31 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     
-    # Throttling
+    # Throttling - معدلات محسنة
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle'
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '60/minute',
-        'user': '1000/minute',
-        'report_create': '60/hour',
+        'anon': '20/minute',        # 20 طلب في الدقيقة للزوار
+        'user': '100/minute',       # 100 طلب في الدقيقة للمستخدمين العاديين
+        'staff': '300/minute',      # 300 طلب في الدقيقة للمشرفين
+        'otp': '3/hour',            # 3 محاولات OTP في الساعة
+        'register': '5/hour',       # 5 محاولات تسجيل في الساعة
+        'login': '10/minute',       # 10 محاولات دخول في الدقيقة
+        'report_create': '10/hour', # 10 بلاغات في الساعة
     }
 }
 
 # JWT Settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),     # تقليل إلى ساعة
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),     # تقليل إلى يوم
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
 }
 
 # Custom user model
@@ -198,6 +207,20 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880   # 5MB
 # Business Logic Settings
 FACE_DETECTION_REQUIRED = config('FACE_DETECTION_REQUIRED', default=True, cast=bool)
 
+# OTP Settings
+OTP_EXPIRY_MINUTES = 10
+OTP_MAX_ATTEMPTS = 5
+OTP_RESEND_COOLDOWN_MINUTES = 2
+OTP_LENGTH = 6
+
+# Cache settings (لـ OTP)
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+    }
+}
+
 # Logging
 LOGGING = {
     'version': 1,
@@ -221,7 +244,7 @@ LOGGING = {
             'class': 'logging.FileHandler',
             'filename': BASE_DIR / 'logs' / 'debug.log',
             'formatter': 'verbose',
-            'mode': 'a',  # append mode
+            'mode': 'a',
         },
     },
     'root': {
@@ -241,3 +264,15 @@ LOGGING = {
         },
     },
 }
+
+# Production security settings (إذا DEBUG = False)
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True

@@ -9,8 +9,7 @@ class DailyStatsAdmin(admin.ModelAdmin):
                    'match_success_rate', 'calculated_at']
     list_filter = ['date']
     search_fields = ['date']
-    readonly_fields = ['calculated_at', 'top_cities', 'reports_by_gender', 
-                      'reports_by_age_group']
+    readonly_fields = ['calculated_at']
     date_hierarchy = 'date'
     
     actions = ['recalculate_stats']
@@ -26,7 +25,7 @@ class DailyStatsAdmin(admin.ModelAdmin):
 @admin.register(PerformanceMetric)
 class PerformanceMetricAdmin(admin.ModelAdmin):
     list_display = ['metric_name', 'current_value', 'target_value', 'unit', 
-                   'category', 'get_status_display', 'last_updated']
+                   'category', 'status_colored', 'last_updated']
     list_filter = ['category', 'is_active']
     search_fields = ['metric_name', 'metric_description']
     readonly_fields = ['metric_id', 'last_updated']
@@ -44,19 +43,21 @@ class PerformanceMetricAdmin(admin.ModelAdmin):
         }),
     )
     
-    def get_status_display(self, obj):
+    def status_colored(self, obj):
         status, display = obj.get_status()
-        color = {
+        colors = {
             'healthy': 'green',
             'warning': 'orange',
-            'critical': 'red'
-        }.get(status, 'gray')
+            'critical': 'red',
+            'unknown': 'gray'
+        }
+        color = colors.get(status, 'gray')
         
         return format_html(
             '<span style="color: {}; font-weight: bold;">{}</span>',
             color, display
         )
-    get_status_display.short_description = 'الحالة'
+    status_colored.short_description = 'الحالة'
 
 
 @admin.register(AnalyticsReport)
@@ -132,3 +133,9 @@ class DashboardWidgetAdmin(admin.ModelAdmin):
             'fields': ('is_active', 'is_public')
         }),
     )
+    
+    def get_readonly_fields(self, request, obj=None):
+        """تحديد الحقول المقروءة فقط"""
+        if obj:  # عند التعديل
+            return self.readonly_fields + ['widget_id']
+        return self.readonly_fields

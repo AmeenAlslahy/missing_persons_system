@@ -1,22 +1,9 @@
 """
 URL configuration for config project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/5.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
 from django.urls import path, include
-from django.views.generic import TemplateView, RedirectView
+from django.views.generic import RedirectView
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework import permissions
@@ -37,29 +24,50 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
+    # Django Admin
     path('admin/', admin.site.urls),
     
-    # API Endpoints
+    # API Endpoints - إصدار واحد فقط
     path('api/accounts/', include('accounts.urls')),
     path('api/reports/', include('reports.urls')),
-    path('api/analytics/', include('analytics.urls')),
+    path('api/analytics/', include('analytics.urls')),  # مرة واحدة فقط
     path('api/matching/', include('matching.urls')),
     path('api/notifications/', include('notifications.urls')),
-    path('api/analytics/', include('analytics.urls')),
+    path('api/locations/', include('locations.urls')),  # إضافة المسار المفقود
     
-    # Documentation
+    # API Documentation
     path('swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
     
-    # Administrative Dashboard
+    # Administrative Dashboard - كل مسارات لوحة التحكم في مكان واحد
     path('admin-dashboard/', include('admin_dashboard.urls')),
     
-    # Redirection for default login path
-    path('accounts/login/', RedirectView.as_view(url='/admin-dashboard/login/', query_string=True)),
+    # Redirects
+    path('accounts/login/', RedirectView.as_view(
+        url='/admin-dashboard/login/', 
+        query_string=True,
+        permanent=False
+    )),
     
-    # Dashboard
-    path('', RedirectView.as_view(url='admin-dashboard/'), name='home'),
-    path('dashboard/', RedirectView.as_view(url='/admin-dashboard/'), name='dashboard'),
-    path('dashboard/reports/', TemplateView.as_view(template_name='reports/reports.html'), name='dashboard-reports'),
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    # Home redirect to dashboard
+    path('', RedirectView.as_view(
+        url='/admin-dashboard/', 
+        permanent=False
+    ), name='home'),
+    
+    # Dashboard redirects - توحيد جميع المسارات
+    path('dashboard/', RedirectView.as_view(
+        url='/admin-dashboard/', 
+        permanent=True
+    ), name='dashboard'),
+]
+
+# Serve media files in development
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+    
+    # إضافة مسارات للتطوير فقط
+    from django.contrib.staticfiles.urls import staticfiles_urlpatterns
+    urlpatterns += staticfiles_urlpatterns()

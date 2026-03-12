@@ -1,23 +1,24 @@
-from django.shortcuts import render
 from datetime import timedelta
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db.models import Count, Avg, Q
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import MatchResult, MatchingConfig, MatchingAuditLog, FaceEmbedding, MatchReview
+import logging
+
+from .models import MatchResult, MatchingAuditLog
 from .serializers import (
-    MatchResultSerializer, 
-    MatchResultDetailSerializer,
-    MatchReviewSerializer,
-    MatchingConfigSerializer,
-    MatchingAuditLogSerializer,
-    FaceEmbeddingSerializer,
-    MatchReviewRequestSerializer
+    MatchResultSerializer, MatchResultDetailSerializer,
+    MatchReviewRequestSerializer, MatchRequestSerializer,
+    MatchStatisticsSerializer
 )
-from .matcher import FaceMatcher
+from .matcher import ReportMatcher
 from accounts.permissions import IsVolunteerOrHigher, IsAdminUser
+
+logger = logging.getLogger(__name__)
+
 
 class MatchResultViewSet(viewsets.ModelViewSet):
     """
@@ -34,18 +35,35 @@ class MatchResultViewSet(viewsets.ModelViewSet):
         'similarity_score': ['gte', 'lte'],
     }
     search_fields = [
-        'missing_report__person_name', 
-        'found_report__person_name',
-        'missing_report__report_code',
-        'found_report__report_code'
+        'report_1__person__first_name', 
+        'report_1__person__last_name',
+        'report_2__person__first_name',
+        'report_2__person__last_name',
+        'report_1__report_code',
+        'report_2__report_code'
     ]
-    ordering_fields = ['similarity_score', 'confidence_score', 'detected_at']
+    ordering_fields = ['similarity_score', 'detected_at', 'updated_at']
     ordering = ['-similarity_score']
+    
+    def get_queryset(self):
+        """تخصيص الاستعلام لجلب البيانات المرتبطة"""
+        return MatchResult.objects.select_related(
+            'report_1__person', 'report_2__person',
+            'report_1__lost_governorate', 'report_2__lost_governorate',  # ✅ تعديل هنا
+            'report_1__lost_district', 'report_2__lost_district'         # ✅ إضافة المديرية
+        ).prefetch_related(
+            'report_1__images', 'report_2__images'
+        ).all()
     
     def get_serializer_class(self):
         if self.action in ['retrieve', 'review']:
             return MatchResultDetailSerializer
         return MatchResultSerializer
+    
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
     
     @action(detail=True, methods=['post'])
     def review(self, request, pk=None):
@@ -53,61 +71,92 @@ class MatchResultViewSet(viewsets.ModelViewSet):
         match_result = self.get_object()
         serializer = MatchReviewRequestSerializer(data=request.data)
         
-        if serializer.is_valid():
-            decision = serializer.validated_data['decision']
-            notes = serializer.validated_data.get('notes', '')
-            
-            if not notes or len(notes) < 5:
-                return Response({'error': 'يجب إضافة ملاحظات توضيحية (5 أحرف على الأقل) لاتخاذ هذا القرار'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            if decision == 'accept':
-                match_result.accept_match(request.user, notes)
-            elif decision == 'reject':
-                match_result.reject_match(request.user, notes)
-            elif decision == 'false_positive':
-                match_result.reject_match(request.user, notes, false_positive=True)
-            elif decision == 'open_comm':
-                match_result.communication_opened = True
-                match_result.match_status = MatchResult.MatchStatus.REVIEWING
-                match_result.save()
-            
-            # تسجيل المراجعة في جدول MatchReview
-            MatchReview.objects.create(
-                match=match_result,
-                reviewer=request.user,
-                decision=decision if decision in ['accept', 'reject'] else 'need_more_info',
-                notes=notes
-            )
-            
-            return Response({'status': 'reviewed', 'match_status': match_result.match_status, 'message': 'تم تحديث حالة المطابقة'})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        decision = serializer.validated_data['decision']
+        notes = serializer.validated_data['notes']
+        
+        # تحديث الحالة حسب القرار
+        if decision == 'accept':
+            match_result.match_status = 'accepted'
+            message = 'تم قبول المطابقة'
+        elif decision == 'reject':
+            match_result.match_status = 'rejected'
+            message = 'تم رفض المطابقة'
+        elif decision == 'false_positive':
+            match_result.match_status = 'false_positive'
+            message = 'تم تصنيفها كإيجابية خاطئة'
+        elif decision == 'reviewing':
+            match_result.match_status = 'reviewing'
+            message = 'تم تحويلها للمراجعة اليدوية'
+        
+        match_result.reviewed_by = request.user
+        match_result.reviewed_at = timezone.now()
+        match_result.review_notes = notes
+        match_result.save()
+        
+        # تسجيل في سجل التدقيق
+        MatchingAuditLog.objects.create(
+            action_type='review',
+            status='success',
+            message=f"تم {message} للمطابقة {match_result.match_id}",
+            created_by=request.user
+        )
+        
+        return Response({
+            'status': 'reviewed',
+            'match_status': match_result.match_status,
+            'message': f'تم {message}'
+        })
     
     @action(detail=False, methods=['post'])
     def find_matches(self, request):
         """تشغيل المطابقة يدوياً لبلاغ"""
-        report_id = request.data.get('report_id')
-        if not report_id:
-            return Response({'error': 'report_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = MatchRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
+        report_id = serializer.validated_data['report_id']
+        
         try:
             from reports.models import Report
             report = Report.objects.get(report_id=report_id)
             
-            matcher = FaceMatcher()
-            matches = matcher.find_matches_for_report(report)
+            matcher = ReportMatcher()
+            matches_count = matcher.run_matching_for_report(report)
             
-            return Response({'matches_found': len(matches), 'matches': matches})
+            return Response({
+                'matches_found': matches_count,
+                'message': f'تم العثور على {matches_count} مطابقة'
+            })
+            
         except Report.DoesNotExist:
-            return Response({'error': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {'error': 'البلاغ غير موجود'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"خطأ في تشغيل المطابقة: {e}")
+            return Response(
+                {'error': 'حدث خطأ في تشغيل المطابقة'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """ملخص سريع للمطابقات"""
+        total = self.get_queryset().count()
+        pending = self.get_queryset().filter(match_status='pending').count()
+        accepted = self.get_queryset().filter(match_status='accepted').count()
+        
+        return Response({
+            'total': total,
+            'pending': pending,
+            'accepted': accepted,
+            'pending_for_review': pending
+        })
 
-class MatchingConfigViewSet(viewsets.ModelViewSet):
-    """
-    إدارة إعدادات المطابقة (للمشرفين فقط)
-    """
-    queryset = MatchingConfig.objects.all()
-    serializer_class = MatchingConfigSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
 
 class MatchStatisticsView(APIView):
     """
@@ -116,37 +165,39 @@ class MatchStatisticsView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsVolunteerOrHigher]
     
     def get(self, request):
+        # إحصائيات أساسية
         total_matches = MatchResult.objects.count()
-        accepted_matches = MatchResult.objects.filter(match_status='accepted').count()
         pending_matches = MatchResult.objects.filter(match_status='pending').count()
-        avg_confidence = MatchResult.objects.aggregate(Avg('confidence_score'))['confidence_score__avg'] or 0
+        accepted_matches = MatchResult.objects.filter(match_status='accepted').count()
+        rejected_matches = MatchResult.objects.filter(match_status='rejected').count()
+        false_positive = MatchResult.objects.filter(match_status='false_positive').count()
         
-        return Response({
+        # متوسط التشابه
+        avg_similarity = MatchResult.objects.aggregate(
+            avg=Avg('similarity_score')
+        )['avg'] or 0
+        
+        # حسب الأولوية
+        by_priority = MatchResult.objects.values('priority_level').annotate(
+            count=Count('match_id')
+        )
+        
+        # حسب مستوى الثقة
+        by_confidence = MatchResult.objects.values('confidence_level').annotate(
+            count=Count('match_id')
+        )
+        
+        data = {
             'total_matches': total_matches,
-            'accepted_matches': accepted_matches,
             'pending_matches': pending_matches,
-            'avg_confidence': round(avg_confidence, 2)
-        })
-
-class FaceEmbeddingViewSet(viewsets.ModelViewSet):
-    """
-    إدارة ومراقبة بصمات الوجوه ومعالجة الصور
-    """
-    queryset = FaceEmbedding.objects.all().order_by('-created_at')
-    serializer_class = FaceEmbeddingSerializer
-    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
-    filter_backends = [DjangoFilterBackend, filters.OrderingFilter, filters.SearchFilter]
-    filterset_fields = ['processing_status', 'embedding_version']
-    search_fields = ['image__report__person_name', 'image__report__report_code']
-    ordering_fields = ['created_at', 'quality_score', 'confidence_score']
-    
-    @action(detail=True, methods=['post'])
-    def reprocess(self, request, pk=None):
-        """إعادة معالجة الصورة لاستخراج البصمة"""
-        embedding = self.get_object()
-        embedding.processing_status = 'pending'
-        embedding.save()
+            'accepted_matches': accepted_matches,
+            'rejected_matches': rejected_matches,
+            'false_positive_matches': false_positive,
+            'avg_similarity': round(avg_similarity, 2),
+            'by_priority': {item['priority_level']: item['count'] for item in by_priority},
+            'by_confidence': {item['confidence_level']: item['count'] for item in by_confidence},
+        }
         
-        # TODO: Trigger background task for processing
-        
-        return Response({'status': 're-processing started', 'message': 'تمت إضافة الصورة لزمام المعالجة'})
+        serializer = MatchStatisticsSerializer(data=data)
+        serializer.is_valid()
+        return Response(serializer.data)

@@ -1,7 +1,20 @@
 from rest_framework import serializers
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
-from .models import Report, ReportImage, Category, GeographicalArea, ReportAuditLog
+from datetime import date
+from .models import Report, ReportImage, Person
+from locations.models import Governorate, District, Uzlah
+
+
+
+def get_client_ip(request):
+    """دالة مساعدة للحصول على IP العميل"""
+    if not request:
+        return None
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        return x_forwarded_for.split(',')[0]
+    return request.META.get('REMOTE_ADDR')
 
 
 class ReportImageSerializer(serializers.ModelSerializer):
@@ -10,65 +23,158 @@ class ReportImageSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = ReportImage
-        fields = ['id', 'image', 'image_url', 'face_detected', 'quality_score', 
-                 'processing_status', 'uploaded_at']
-        read_only_fields = ['face_detected', 'quality_score', 'processing_status', 
-                          'uploaded_at']
+        fields = ['image_id', 'image_path', 'image_url', 'face_embedding', 
+                 'quality_score', 'upload_at']
+        read_only_fields = ['face_embedding', 'quality_score', 'upload_at']
     
     def get_image_url(self, obj):
         request = self.context.get('request')
-        if obj.image and request:
+        if obj.image_path and request:
             try:
-                return request.build_absolute_uri(obj.image.url)
-            except (DisallowedHost, Exception):
-                # Fallback if build_absolute_uri fails (e.g., invalid HTTP_HOST)
-                return obj.image.url
+                return request.build_absolute_uri(obj.image_path.url)
+            except Exception:
+                return obj.image_path.url
         return None
 
 
 class ReportSerializer(serializers.ModelSerializer):
-    """سرياليزر للبلاغات"""
     user = serializers.StringRelatedField(read_only=True)
     images = ReportImageSerializer(many=True, read_only=True)
-    age_display = serializers.ReadOnlyField(source='get_age_display')
-    full_address = serializers.ReadOnlyField(source='get_full_address')
     
-    # Display fields for Enums
-    body_build_display = serializers.ReadOnlyField(source='get_body_build_display')
-    skin_color_display = serializers.ReadOnlyField(source='get_skin_color_display')
-    eye_color_display = serializers.ReadOnlyField(source='get_eye_color_display')
-    hair_color_display = serializers.ReadOnlyField(source='get_hair_color_display')
-    hair_type_display = serializers.ReadOnlyField(source='get_hair_type_display')
+    # حقول الشخص (للكتابة)
+    person_first_name = serializers.CharField(write_only=True)
+    person_middle_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    person_last_name = serializers.CharField(write_only=True)
+    person_gender = serializers.ChoiceField(choices=Person.GENDER_CHOICES, write_only=True)
+    person_date_of_birth = serializers.DateField(required=False, allow_null=True, write_only=True)
+    approx_age = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    
+    # حقول إضافية للشخص
+    person_blood_type = serializers.ChoiceField(choices=Person.BLOOD_TYPE_CHOICES, required=False, allow_blank=True, write_only=True)
+    person_chronic_conditions = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    person_permanent_marks = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    
+    # موقع السكن (للكتابة)
+    home_governorate = serializers.PrimaryKeyRelatedField(queryset=Governorate.objects.all(), required=False, allow_null=True, write_only=True)
+    home_district = serializers.PrimaryKeyRelatedField(queryset=District.objects.all(), required=False, allow_null=True, write_only=True)
+    home_uzlah = serializers.PrimaryKeyRelatedField(queryset=Uzlah.objects.all(), required=False, allow_null=True, write_only=True)
+
+    # حقول العرض (للقراءة)
+    person_id = serializers.ReadOnlyField(source='person.person_id')
+    person_name = serializers.SerializerMethodField()
+    person_gender_display = serializers.ReadOnlyField(source='person.get_gender_display')
+    person_date_of_birth_display = serializers.DateField(source='person.date_of_birth', read_only=True)
+    
+    # موقع الفقدان (مجمع للواجهة)
+    last_seen_location = serializers.SerializerMethodField()
+    
+    # معلومات العرض للسكن
+    home_governorate_name = serializers.CharField(source='person.home_governorate.name_ar', read_only=True)
+    home_district_name = serializers.CharField(source='person.home_district.name_ar', read_only=True)
+    home_uzlah_name = serializers.CharField(source='person.home_uzlah.name_ar', read_only=True)
+    
+    # موقع الفقدان (من Report)
+    lost_governorate_name = serializers.CharField(source='lost_governorate.name_ar', read_only=True)
+    lost_district_name = serializers.CharField(source='lost_district.name_ar', read_only=True)
+    lost_uzlah_name = serializers.CharField(source='lost_uzlah.name_ar', read_only=True)
+    
+    primary_photo = serializers.SerializerMethodField()
     
     class Meta:
         model = Report
         fields = [
-            'report_id', 'report_code', 'user', 'report_type', 'person_name',
-            'age', 'age_display', 'gender', 'nationality', 'primary_photo',
-            'height', 'weight', 'body_build', 'skin_color', 'eye_color',
-            'hair_color', 'hair_type', 'distinctive_features', 
-            'body_build_display', 'skin_color_display', 'eye_color_display',
-            'hair_color_display', 'hair_type_display',
-            'scars_marks', 'tattoos', 'last_seen_location', 'last_seen_date', 
-            'last_seen_time', 'missing_from', 'circumstances', 'found_location', 
-            'found_date', 'current_location', 'health_condition', 'contact_person',
-            'contact_phone', 'contact_email', 'contact_relationship',
-            'status', 'requires_admin_review', 'rejection_reason', 'close_reason',
-            'latitude', 'longitude', 'city', 'district', 'review_notes', 
-            'created_at', 'updated_at', 'images', 'full_address'
+            'report_id', 'report_code', 'user', 'report_type',
+            'person_id', 'person_name', 'person_gender', 'person_gender_display',
+            'person_first_name', 'person_middle_name', 'person_last_name',
+            'person_date_of_birth', 'person_date_of_birth_display', 'approx_age',
+            'person_blood_type', 'person_chronic_conditions', 'person_permanent_marks',
+            'home_governorate', 'home_district', 'home_uzlah',
+            'home_governorate_name', 'home_district_name', 'home_uzlah_name',
+            'lost_governorate', 'lost_governorate_name',
+            'lost_district', 'lost_district_name',
+            'lost_uzlah', 'lost_uzlah_name', 'lost_location_details',
+            'last_seen_date', 'last_seen_time', 'last_seen_location',
+            'health_at_loss', 'medications', 'clothing_description', 'possessions',
+            'status', 'importance', 'contact_phone', 'contact_person',
+            'created_at', 'updated_at', 'resolved_at',
+            'images', 'primary_photo'
         ]
-        read_only_fields = ['report_id', 'report_code', 'user', 'status', 
-                          'requires_admin_review', 'created_at', 'updated_at']
-    
-    def validate(self, data):
-        """التحقق من صحة بيانات البلاغ"""
-        # التحقق من أن تاريخ الرؤية ليس في المستقبل
-        if data.get('last_seen_date') and data['last_seen_date'] > timezone.now().date():
-            raise serializers.ValidationError({
-                'last_seen_date': _('تاريخ الرؤية لا يمكن أن يكون في المستقبل')
-            })
+        read_only_fields = ['report_id', 'report_code', 'user', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        # استخراج بيانات الشخص
+        person_data = {
+            'first_name': validated_data.pop('person_first_name'),
+            'middle_name': validated_data.pop('person_middle_name', ''),
+            'last_name': validated_data.pop('person_last_name'),
+            'gender': validated_data.pop('person_gender'),
+            'date_of_birth': validated_data.pop('person_date_of_birth', None),
+            'blood_type': validated_data.pop('person_blood_type', ''),
+            'chronic_conditions': validated_data.pop('person_chronic_conditions', ''),
+            'permanent_marks': validated_data.pop('person_permanent_marks', ''),
+            'home_governorate': validated_data.pop('home_governorate', None),
+            'home_district': validated_data.pop('home_district', None),
+            'home_uzlah': validated_data.pop('home_uzlah', None),
+        }
         
-        return data
+        # معالجة العمر التقريبي إذا وجد
+        approx_age = validated_data.pop('approx_age', None)
+        if not person_data['date_of_birth'] and approx_age:
+            today = timezone.now().date()
+            person_data['date_of_birth'] = date(today.year - approx_age, 1, 1)
+
+        # إنشاء الشخص
+        person = Person.objects.create(**person_data)
+        
+        # إنشاء البلاغ
+        validated_data['person'] = person
+        report = Report.objects.create(**validated_data)
+        
+        # معالجة الصور المرفوعة
+        request = self.context.get('request')
+        if request and request.FILES:
+            images = request.FILES.getlist('images')
+            for image in images:
+                ReportImage.objects.create(report=report, image_path=image)
+        
+        return report
+
+    def get_person_name(self, obj):
+        return obj.person.full_name if obj.person else ""
+
+    def get_primary_photo(self, obj):
+        first_image = obj.images.first()
+        if first_image and first_image.image_path:
+            request = self.context.get('request')
+            if request:
+                try:
+                    return request.build_absolute_uri(first_image.image_path.url)
+                except Exception:
+                    return first_image.image_path.url
+            return first_image.image_path.url
+        return None
+
+    def get_last_seen_location(self, obj):
+        parts = []
+        if obj.lost_governorate and obj.lost_governorate.name_ar:
+            parts.append(obj.lost_governorate.name_ar)
+        if obj.lost_district and obj.lost_district.name_ar:
+            parts.append(obj.lost_district.name_ar)
+        if obj.lost_uzlah and obj.lost_uzlah.name_ar:
+            parts.append(obj.lost_uzlah.name_ar)
+        return " - ".join(parts) if parts else _("غير محدد")
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        request = self.context.get('request')
+        user = request.user if request and request.user else None
+        
+        if user and not user.is_staff and instance.user != user:
+            phone = representation.get('contact_phone', '')
+            if phone and len(phone) > 4:
+                representation['contact_phone'] = phone[:3] + '*' * (len(phone) - 5) + phone[-2:]
+        
+        return representation
 
 
 class ReportReviewSerializer(serializers.Serializer):
@@ -78,7 +184,6 @@ class ReportReviewSerializer(serializers.Serializer):
     rejection_reason = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, data):
-        """التحقق من صحة البيانات"""
         action = data.get('action')
         rejection_reason = data.get('rejection_reason')
 
@@ -93,273 +198,48 @@ class ReportReviewSerializer(serializers.Serializer):
 class ReportCloseSerializer(serializers.Serializer):
     """سرياليزر إغلاق البلاغ"""
     close_reason = serializers.CharField(required=True)
+
+
+class ReportStatisticsSerializer(serializers.Serializer):
+    """سرياليزر إحصائيات البلاغات"""
+    total_reports = serializers.IntegerField(required=False, default=0)
+    missing_reports = serializers.IntegerField(required=False, default=0)
+    found_reports = serializers.IntegerField(required=False, default=0)
+    active_reports = serializers.IntegerField(required=False, default=0)
+    pending_review = serializers.IntegerField(required=False, default=0)
+    resolved_reports = serializers.IntegerField(required=False, default=0)
+    my_reports = serializers.IntegerField(required=False, default=0)
+    my_active_reports = serializers.IntegerField(required=False, default=0)
+    my_resolved_reports = serializers.IntegerField(required=False, default=0)
+    total_active_reports = serializers.IntegerField(required=False, default=0)
+    status_breakdown = serializers.DictField(required=False, default=dict)
     
-    def create(self, validated_data):
-        """إنشاء بلاغ جديد"""
-        user = self.context['request'].user
-        
-        # التحقق إذا كان المستخدم مؤكد الهوية
-        if not user.can_create_report():
-            raise serializers.ValidationError(
-                _('يجب التحقق من هويتك قبل إنشاء بلاغات')
-            )
-        
-        # إضافة المستخدم إلى البيانات
-        validated_data['user'] = user
-        
-        # إنشاء البلاغ
-        report = Report.objects.create(**validated_data)
-        
-        # تسجيل في سجل التدقيق
-        ReportAuditLog.objects.create(
-            report=report,
-            user=user,
-            action_type='CREATE',
-            action_details=f'إنشاء بلاغ جديد: {report.report_code}',
-            ip_address=self.get_client_ip(),
-            user_agent=self.context['request'].META.get('HTTP_USER_AGENT', '')
-        )
-        
-        # تحديث عدد بلاغات المستخدم
-        user.total_reports += 1
-        user.save()
-        
-        return report
+    # ✅ تغيير from by_city to by_governorate
+    by_governorate = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+    by_status = serializers.ListField(child=serializers.DictField(), required=False, default=list)
     
-    def get_client_ip(self):
-        request = self.context.get('request')
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0]
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
+    # ✅ إضافة حقول جديدة
+    by_gender = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+    avg_age_at_loss = serializers.FloatField(required=False, default=0)
 
 
-class ReportUpdateSerializer(serializers.ModelSerializer):
-    """سرياليزر لتحديث البلاغات (للمستخدمين)"""
-    class Meta:
-        model = Report
-        fields = [
-            'person_name', 'age', 'gender', 'nationality', 'primary_photo',
-            'height', 'weight', 'body_build', 'skin_color', 'eye_color',
-            'hair_color', 'hair_type', 'distinctive_features', 
-            'scars_marks', 'tattoos', 'contact_person', 'contact_phone', 'contact_email',
-            'contact_relationship', 'city', 'district', 'latitude', 'longitude'
-        ]
-    
-    def update(self, instance, validated_data):
-        """تحديث البلاغ مع تسجيل التغييرات"""
-        old_data = {
-            field: getattr(instance, field) 
-            for field in validated_data.keys()
-        }
-        
-        # تحديث البيانات
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        
-        instance.save()
-        
-        # تسجيل التغييرات في سجل التدقيق
-        changed_fields = [
-            field for field in validated_data.keys() 
-            if getattr(instance, field) != old_data[field]
-        ]
-        
-        if changed_fields:
-            ReportAuditLog.objects.create(
-                report=instance,
-                user=self.context['request'].user,
-                action_type='UPDATE',
-                action_details=f'تحديث البلاغ: {", ".join(changed_fields)}',
-                old_data=old_data,
-                new_data=validated_data,
-                changed_fields=changed_fields,
-                ip_address=self.get_client_ip(),
-                user_agent=self.context['request'].META.get('HTTP_USER_AGENT', '')
-            )
-        
-        return instance
-    
-    def get_client_ip(self):
-        request = self.context.get('request')
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0]
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
-
-
-class AdminReportSerializer(serializers.ModelSerializer):
-    """سرياليزر للبلاغات (للمشرفين)"""
-    user_email = serializers.SerializerMethodField()
-    user_full_name = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Report
-        exclude = ['user']
-        read_only_fields = ['report_id', 'report_code', 'created_at', 'updated_at']
-
-    def get_user_email(self, obj):
-        return obj.user.email if obj.user else None
-
-    def get_user_full_name(self, obj):
-        if obj.user:
-            return obj.user.full_name or obj.user.email
-        return None
-
-    def validate(self, data):
-        """التحقق المتقدم من صحة البيانات بناءً على متطلبات المستخدم"""
-        report_type = data.get('report_type')
-        gender = data.get('gender')
-        person_name = data.get('person_name')
-        primary_photo = data.get('primary_photo')
-
-        # 1. التحقق من تكرار البلاغ (نفس الاسم ونوع البلاغ)
-        if person_name and report_type:
-            exists = Report.objects.filter(
-                person_name=person_name,
-                report_type=report_type,
-                status__in=['active', 'pending']
-            ).exclude(id=self.instance.id if self.instance else None).exists()
-            if exists:
-                raise serializers.ValidationError(_('يوجد بلاغ نشط بالفعل بنفس الاسم لهذا النوع'))
-
-        # 2. قواعد الصور المشروطة (SR-04/05/06)
-        if report_type == Report.ReportType.MISSING:
-            if gender == Report.Gender.MALE and not primary_photo:
-                raise serializers.ValidationError({'primary_photo': _('الصورة إجبارية للمفقودين الذكور')})
-            # للمفقودات الإناث، الصورة اختيارية (تم وضعها في الـ Meta سابقاً)
-        elif report_type == Report.ReportType.FOUND:
-            if not primary_photo:
-                raise serializers.ValidationError({'primary_photo': _('الصورة إجبارية لجميع بلاغات المعثور عليهم')})
-            # اسم الشخص اختياري للمعثور عليهم (لا داعي لخطأ إذا كان فارغاً)
-
-        # 3. التأكد من إلزامية الحقول الهامة
-        required_fields = ['last_seen_location', 'last_seen_date', 'health_condition']
-        errors = {}
-        for field in required_fields:
-            if not data.get(field):
-                errors[field] = _('هذا الحقل إلزامي')
-        if errors:
-            raise serializers.ValidationError(errors)
-
-        # 4. منطق النشر المشروط (Conditional Publication)
-        last_seen_date = data.get('last_seen_date')
-        if last_seen_date:
-            today = timezone.now().date()
-            if last_seen_date == today:
-                data['status'] = Report.Status.ACTIVE
-                data['requires_admin_review'] = False
-            else:
-                data['status'] = Report.Status.PENDING
-                data['requires_admin_review'] = True
-
-        return data
-
-    def validate_primary_photo(self, value):
-        """التحقق من وجود وجه في الصورة إذا كان مطلوباً"""
-        from django.conf import settings
-        from ai.engine import FaceEngine
-        import numpy as np
-        import cv2
-
-        if not value:
-            return value
-
-        if getattr(settings, 'FACE_DETECTION_REQUIRED', True):
-            # محاولة قراءة الصورة من الذاكرة
-            try:
-                # قراءة الملف للمخزن المؤقت
-                file_data = value.read()
-                nparr = np.frombuffer(file_data, np.uint8)
-                img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                
-                # إعادة المؤشر للبداية
-                value.seek(0)
-                
-                if img is not None:
-                     # استخدام FaceEngine مباشرة إذا كانت تدعم مصفوفة الصورة
-                     # أو استخدام الكود من المحرك لكشف الوجه
-                     # هنا نستخدم detector مباشرة لأنه أسرع
-                    if hasattr(FaceEngine, 'extract_face'):
-                         # للأسف extract_face تأخذ مسار، سنحتاج لتعديلها أو استخدام detecor هنا
-                         # بما أننا قمنا بفك التشفير، سنستخدم mediapipe مباشرة لو أمكن، 
-                         # أو نمرر المصفوفة إذا عدلنا FaceEngine
-                         # للتبسيط هنا:
-                         pass
-                    
-                    # سنفترض أن FaceEngine لديه طريقة detect_from_array أو نستخدم mediapipe هنا
-                    # لكن للالتزام بالخطة، تحققنا من "الجاهزية"
-                    pass
-            except Exception as e:
-                # في حالة حدوث خطأ في المعالجة، لا نمنع الرفع إلا إذا كنا صارمين جداً
-                pass
-        
-        return value
-
-    def create(self, validated_data):
-        """إنشاء البلاغ مع التحقق من وجود وجه في الصورة"""
-        primary_photo = validated_data.get('primary_photo')
-        
-        # محاكاة لفحص الوجه (سيتم استبدالها لاحقاً بخدمة فعلية)
-        # في الوقت الحالي، نفترض أن أي صورة مرفوعة تحتوي على وجه، 
-        # ولكن يمكن إضافة فحص بسيط هنا إذا لزم الأمر.
-        
-        report = super().create(validated_data)
-        return report
-
-    def update(self, instance, validated_data):
-        """تحديث البلاغ من قبل المشرف"""
-        user = self.context['request'].user
-        
-        # فقط المشرفون يمكنهم تغيير الحالة
-        if 'status' in validated_data and not user.is_staff:
-            del validated_data['status']
-        
-        # إذا تم تحديث الحالة، تسجيل المراجعة
-        if 'status' in validated_data:
-            validated_data['reviewed_by'] = user
-            validated_data['reviewed_at'] = timezone.now()
-        
-        return super().update(instance, validated_data)
-
-
-class CategorySerializer(serializers.ModelSerializer):
-    """سرياليزر للفئات"""
-    class Meta:
-        model = Category
-        fields = '__all__'
-
-
-class GeographicalAreaSerializer(serializers.ModelSerializer):
-    """سرياليزر للمناطق الجغرافية"""
-    class Meta:
-        model = GeographicalArea
-        fields = '__all__'
-
-
+# السطر 176-200 - استبدل حقل city
 class ReportSearchSerializer(serializers.Serializer):
     """سرياليزر للبحث في البلاغات"""
-    query = serializers.CharField(required=False)
-    report_type = serializers.ChoiceField(
-        choices=Report.ReportType.choices, 
-        required=False
-    )
-    city = serializers.CharField(required=False)
-    gender = serializers.ChoiceField(
-        choices=Report.Gender.choices, 
-        required=False
-    )
+    query = serializers.CharField(required=False, allow_blank=True)
+    report_type = serializers.CharField(required=False, allow_blank=True)
+    
+    # ✅ التوافق مع الإصدارات السابقة
+    governorate = serializers.CharField(required=False, allow_blank=True)
+    governorate_id = serializers.IntegerField(required=False, allow_null=True)
+    
+    gender = serializers.CharField(required=False, allow_blank=True)
     min_age = serializers.IntegerField(required=False, min_value=0)
     max_age = serializers.IntegerField(required=False, min_value=0)
     start_date = serializers.DateField(required=False)
     end_date = serializers.DateField(required=False)
     
     def validate(self, data):
-        """التحقق من صحة بيانات البحث"""
         if data.get('min_age') and data.get('max_age'):
             if data['min_age'] > data['max_age']:
                 raise serializers.ValidationError({
