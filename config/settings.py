@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'matching',
     'admin_dashboard',
     'locations',
+    'audit',
 ]
 
 MIDDLEWARE = [
@@ -55,6 +56,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'analytics.middleware.AnalyticsMiddleware',
+    'audit.middleware.AuditLogMiddleware',
 ]
 
 ANALYTICS_SETTINGS = {

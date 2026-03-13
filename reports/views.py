@@ -11,13 +11,15 @@ from django.utils.translation import gettext_lazy as _
 from datetime import date, timedelta
 import logging
 
-from .models import Report, ReportImage
+from .models import Report, ReportImage, Person
 from .serializers import (
     ReportSerializer, ReportReviewSerializer, ReportCloseSerializer,
     ReportStatisticsSerializer, ReportSearchSerializer,
-    ReportImageSerializer, get_client_ip
+    ReportImageSerializer, PersonSearchSerializer, 
+    ReportFromExistingPersonSerializer, get_client_ip
 )
 from accounts.permissions import IsVerifiedUser
+from audit.services import AuditService
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +134,17 @@ class ReportViewSet(viewsets.ModelViewSet):
         self.perform_create(serializer)
         
         report = serializer.instance
+        
+        # تسجيل العملية
+        AuditService.log_action(
+            user=request.user,
+            action='CREATE',
+            resource_type='Report',
+            resource_id=report.id,
+            data_after=serializer.data,
+            request=request
+        )
+        
         logger.info(f"New report created: {report.report_code} by user {request.user}")
         
         headers = self.get_success_headers(serializer.data)
@@ -161,6 +174,16 @@ class ReportViewSet(viewsets.ModelViewSet):
                 message = _('تم رفض البلاغ')
 
             report.save()
+            
+            # تسجيل العملية
+            AuditService.log_action(
+                user=request.user,
+                action='REVIEW',
+                resource_type='Report',
+                resource_id=report.id,
+                data_after={'status': report.status, 'notes': notes, 'rejection_reason': rejection_reason},
+                request=request
+            )
             
             logger.info(f"Report {report.report_code} reviewed by {request.user} with action {action}")
 
@@ -194,6 +217,16 @@ class ReportViewSet(viewsets.ModelViewSet):
         report.resolved_at = timezone.now()
         report.save()
         
+        # تسجيل العملية
+        AuditService.log_action(
+            user=request.user,
+            action='STATUS_CHANGE',
+            resource_type='Report',
+            resource_id=report.id,
+            data_after={'status': 'resolved', 'resolved_at': str(report.resolved_at)},
+            request=request
+        )
+        
         logger.info(f"Report {report.report_code} resolved by {request.user}")
         
         return Response({
@@ -201,12 +234,45 @@ class ReportViewSet(viewsets.ModelViewSet):
             'report': ReportSerializer(report, context={'request': request}).data
         })
 
+    @action(detail=True, methods=['get'])
+    def matches(self, request, pk=None):
+        """عرض جميع المطابقات المرتبطة بهذا البلاغ"""
+        report = self.get_object()
+        
+        from matching.models import MatchResult
+        from matching.serializers import MatchResultSerializer
+        
+        matches = MatchResult.objects.filter(
+            Q(report_1=report) | Q(report_2=report)
+        ).select_related(
+            'report_1__person', 'report_2__person',
+            'report_1__lost_governorate', 'report_2__lost_governorate'
+        ).order_by('-similarity_score')
+        
+        page = self.paginate_queryset(matches)
+        if page is not None:
+            serializer = MatchResultSerializer(page, many=True, context={'request': request})
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = MatchResultSerializer(matches, many=True, context={'request': request})
+        return Response(serializer.data)
+
     @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
     def escalate(self, request, pk=None):
         """تصعيد البلاغ لأولوية قصوى"""
         report = self.get_object()
         report.importance = 'high'
         report.save()
+        
+        # تسجيل العملية
+        AuditService.log_action(
+            user=request.user,
+            action='UPDATE',
+            resource_type='Report',
+            resource_id=report.id,
+            data_after={'importance': 'high'},
+            request=request
+        )
         
         logger.info(f"Report {report.report_code} escalated by {request.user}")
         
@@ -340,3 +406,83 @@ class ReportStatisticsView(APIView):
         serializer = ReportStatisticsSerializer(data=stats)
         serializer.is_valid()
         return Response(serializer.data)
+
+
+class SearchPersonsView(APIView):
+    """البحث عن أشخاص مشابهين بالاسم"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        query = request.query_params.get('q', '').strip()
+        if len(query) < 2:
+            return Response({'results': []})
+        
+        # بحث ذكي بالاسم
+        persons = Person.objects.filter(
+            Q(first_name__icontains=query) |
+            Q(middle_name__icontains=query) |
+            Q(last_name__icontains=query)
+        ).prefetch_related('reports', 'reports__images')[:20]
+        
+        # ترتيب حسب درجة التشابه البسيطة
+        results = []
+        for person in persons:
+            data = PersonSearchSerializer(person, context={'request': request}).data
+            results.append(data)
+            
+        return Response({'results': results})
+
+
+class CreateReportFromPersonView(APIView):
+    """إنشاء بلاغ جديد لشخص موجود"""
+    permission_classes = [IsAuthenticated, IsVerifiedUser]
+    
+    def post(self, request, person_id):
+        try:
+            person = Person.objects.get(pk=person_id)
+        except Person.DoesNotExist:
+            return Response(
+                {'error': _('الشخص غير موجود')},
+                status=status.HTTP_404_NOT_NOT_FOUND
+            )
+        
+        serializer = ReportFromExistingPersonSerializer(
+            data=request.data,
+            context={'request': request, 'person': person}
+        )
+        
+        if serializer.is_valid():
+            report = serializer.save()
+            
+            # تسجيل العملية
+            AuditService.log_action(
+                user=request.user,
+                action='CREATE',
+                resource_type='Report',
+                resource_id=report.id,
+                data_after=ReportSerializer(report, context={'request': request}).data,
+                request=request
+            )
+            
+            # تشغيل المطابقة التلقائية
+            try:
+                from matching.matcher import ReportMatcher
+                matcher = ReportMatcher()
+                matches_count = matcher.run_matching_for_report(report)
+            except Exception as e:
+                logger.error(f"Error running matching for report {report.report_code}: {e}")
+                matches_count = 0
+            
+            # تحديث الإحصائيات
+            try:
+                from analytics.services import AnalyticsService
+                AnalyticsService().update_report_stats(report, created=True)
+            except Exception as e:
+                logger.error(f"Error updating analytics for report {report.report_code}: {e}")
+            
+            response_data = ReportSerializer(report, context={'request': request}).data
+            response_data['matches_found'] = matches_count
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

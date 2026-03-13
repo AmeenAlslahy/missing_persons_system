@@ -18,7 +18,7 @@ class IsVolunteerOrHigher(permissions.BasePermission):
             return False
             
         allowed_roles = ['volunteer', 'admin', 'super_admin']
-        return request.user.user_role in allowed_roles
+        return hasattr(request.user, 'role') and request.user.role in allowed_roles
 
 class IsAdminUser(permissions.BasePermission):
     """
@@ -29,4 +29,4 @@ class IsAdminUser(permissions.BasePermission):
             return False
             
         allowed_roles = ['admin', 'super_admin']
-        return request.user.user_role in allowed_roles
+        return hasattr(request.user, 'role') and request.user.role in allowed_roles

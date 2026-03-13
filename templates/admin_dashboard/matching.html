@@ -360,7 +360,7 @@
                     </td>
                     <td>${statusBadge}</td>
                     <td class="text-center">
-                        <button class="btn btn-sm btn-white border shadow-sm px-3" onclick="viewMatch(${m.id})">مراجعة</button>
+                        <button class="btn btn-sm btn-white border shadow-sm px-3" onclick="viewMatch('${m.match_id}')">مراجعة</button>
                     </td>
                 </tr>
                 `;
@@ -374,7 +374,7 @@
                 url: `/api/matching/matches/${matchId}/`,
                 method: 'GET',
                 success: function (m) {
-                    $('#modal-match-id').text(`Match ID: ${m.id} | Detected at: ${new Date(m.detected_at).toLocaleString('ar-SA')}`);
+                    $('#modal-match-id').text(`Match ID: ${m.match_id} | Detected at: ${new Date(m.detected_at).toLocaleString('ar-SA')}`);
                     $('#orig-img').attr('src', m.missing_report_image || '/static/images/placeholder.png');
                     $('#match-img').attr('src', m.found_report_image || '/static/images/placeholder.png');
                     $('#orig-id-badge').text(m.missing_report_code);

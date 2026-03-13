@@ -19,6 +19,31 @@
    - Verified and installed correct versions of `tf-keras`, `tensorflow`, `mediapipe`, and `opencv-python`.
    - Added `django-cryptography`.
 
+## Phase 1-3: System Updates (March 12, 2026)
+
+### Key Achievements
+1. **Search and Create from Person**:
+   - Implemented `SearchPersonsView` for intelligent name search.
+   - Implemented `CreateReportFromPersonView` to link new reports to existing persons.
+   - Updated `Person` model with detailed physical descriptions.
+   - Added `PersonSearchSerializer` and `ReportFromExistingPersonSerializer`.
+
+2. **Improved Matching Algorithm**:
+   - Integrated `jellyfish` library for advanced string similarity.
+   - Implemented Arabic text normalization (unifying characters like 'أ', 'إ', 'آ' to 'ا').
+   - Updated matching weights: Name (40%), Face (40%), Location (10%), Features (10%).
+   - Enhanced feature matching to use new physical descriptions.
+
+3. **Audit Logging System**:
+   - Created a new `audit` app with an `AuditLog` model.
+   - Implemented `AuditService` for consistent logging of system operations.
+   - Integrated auditing into report creation, review, and status updates.
+
+### Verification Results
+- **Search API**: Verified search by name with Arabic normalization.
+- **Matching Algorithm**: Confirmed improved similarity scores for phonetically similar Arabic names.
+- **Audit Logs**: Verified that actions like "Accept/Reject Report" are now logged with user details and data changes.
+
 ## 🚀 How to Run
 1. Activate virtual environment:
    ```powershell

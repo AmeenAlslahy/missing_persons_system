@@ -25,6 +25,40 @@ class Person(models.Model):
         ('AB+', 'AB+'), ('AB-', 'AB-'),
         ('O+', 'O+'), ('O-', 'O-'),
     ]
+    BODY_BUILD_CHOICES = [
+        ('slim', _('نحيف')),
+        ('average', _('متوسط')),
+        ('athletic', _('رياضي')),
+        ('heavy', _('ممتلئ')),
+    ]
+    
+    SKIN_COLOR_CHOICES = [
+        ('light', _('فاتح')),
+        ('fair', _('حنطي')),
+        ('medium', _('متوسط')),
+        ('olive', _('خمري')),
+        ('brown', _('أسمر')),
+        ('black', _('أسود')),
+    ]
+    
+    HAIR_COLOR_CHOICES = [
+        ('black', _('أسود')),
+        ('brown', _('بني')),
+        ('blonde', _('أشقر')),
+        ('red', _('أحمر')),
+        ('white', _('أبيض')),
+        ('grey', _('رمادي')),
+        ('bald', _('أصلع')),
+    ]
+    
+    EYE_COLOR_CHOICES = [
+        ('black', _('أسود')),
+        ('brown', _('بني')),
+        ('hazel', _('عسلي')),
+        ('green', _('أخضر')),
+        ('blue', _('أزرق')),
+        ('grey', _('رمادي')),
+    ]
     
     person_id = models.UUIDField(_('معرف الشخص'), default=uuid.uuid4, editable=False, unique=True, primary_key=True)
     
@@ -35,7 +69,7 @@ class Person(models.Model):
     
     # تاريخ الميلاد (ثابت)
     date_of_birth = models.DateField(_('تاريخ الميلاد'), null=True, blank=True)
-    gender = models.CharField(_('الجنس'), max_length=1, choices=GENDER_CHOICES)
+    gender = models.CharField(_('الجنس'), max_length=10, choices=GENDER_CHOICES)
     
     # صفات ثابتة
     blood_type = models.CharField(_('فصيلة الدم'), max_length=3, choices=BLOOD_TYPE_CHOICES, blank=True)
@@ -55,6 +89,15 @@ class Person(models.Model):
         Uzlah, on_delete=models.SET_NULL, null=True, blank=True,
         verbose_name=_('عزلة السكن'), related_name='residents'
     )
+    
+    # مواصفات جسدية إضافية
+    height = models.FloatField(_('الطول (سم)'), null=True, blank=True)
+    weight = models.FloatField(_('الوزن (كجم)'), null=True, blank=True)
+    body_build = models.CharField(_('البنية الجسدية'), max_length=20, choices=BODY_BUILD_CHOICES, blank=True)
+    skin_color = models.CharField(_('لون البشرة'), max_length=20, choices=SKIN_COLOR_CHOICES, blank=True)
+    hair_color = models.CharField(_('لون الشعر'), max_length=20, choices=HAIR_COLOR_CHOICES, blank=True)
+    eye_color = models.CharField(_('لون العينين'), max_length=20, choices=EYE_COLOR_CHOICES, blank=True)
+    description = models.TextField(_('وصف إضافي'), blank=True)
     
     created_at = models.DateTimeField(_('تاريخ الإضافة'), auto_now_add=True)
     updated_at = models.DateTimeField(_('آخر تحديث'), auto_now=True)

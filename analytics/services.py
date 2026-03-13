@@ -30,6 +30,44 @@ class AnalyticsService:
             logger.error(f"خطأ في تحديث إحصائيات التقرير: {e}")
             return False
 
+    def update_all_stats(self):
+        """
+        تحديث جميع الإحصائيات بشكل متكامل
+        """
+        today = timezone.now().date()
+        
+        # تحديث الإحصائيات اليومية
+        daily_stats = self.update_daily_stats(today)
+        
+        # تحديث مقاييس الأداء
+        self.update_performance_metrics()
+        
+        # تحديث إحصائيات المطابقة
+        self._update_matching_stats()
+        
+        return daily_stats
+
+    def _update_matching_stats(self):
+        """
+        تحديث إحصائيات المطابقة
+        """
+        from matching.models import MatchResult
+        from django.db.models import Count, Avg
+        from django.core.cache import cache
+        
+        stats = {
+            'total_matches': MatchResult.objects.count(),
+            'accepted_matches': MatchResult.objects.filter(match_status='accepted').count(),
+            'pending_matches': MatchResult.objects.filter(match_status='pending').count(),
+            'rejected_matches': MatchResult.objects.filter(match_status='rejected').count(),
+            'avg_similarity': MatchResult.objects.aggregate(Avg('similarity_score'))['similarity_score__avg'] or 0,
+        }
+        
+        # تخزين في كاش للوصول السريع
+        cache.set('matching_stats', stats, timeout=3600)
+        
+        return stats
+
     def update_daily_stats(self, date=None):
         """
         تحديث الإحصائيات اليومية

@@ -4,6 +4,8 @@ from django.db.models import Q
 from django.utils import timezone
 from datetime import timedelta, date
 import logging
+import re
+import jellyfish
 
 from reports.models import Report, ReportImage
 from .models import MatchResult
@@ -21,8 +23,8 @@ class MatchingConfig:
         self.enable_face_matching = True
         self.ai_model_version = 'MobileNetV2_v1.0'
         self.weights = {
-            'face': 0.6,
-            'name': 0.2,
+            'name': 0.4,
+            'face': 0.4,
             'location': 0.1,
             'features': 0.1
         }
@@ -236,38 +238,55 @@ class ReportMatcher:
         
         return feature_score / total_weight if total_weight > 0 else 0.5
     
+    def normalize_arabic(self, text):
+        """توحيد الحروف العربية المتشابهة لتسهيل المطابقة"""
+        if not text:
+            return ""
+        # توحيد الألفات
+        text = re.sub("[إأآا]", "ا", text)
+        # توحيد الهاء والتاء المربوطة
+        text = re.sub("ة", "ه", text)
+        # توحيد الياء والألف المقصورة
+        text = re.sub("ى", "ي", text)
+        # إزالة العلامات (التشكيل)
+        text = re.sub(r'[\u064B-\u0652]', '', text)
+        return text.strip()
+
     def match_by_name(self, report1, report2):
-        """مقارنة الأسماء باستخدام التشابه النصي"""
+        """مقارنة الأسماء باستخدام التشابه النصي والصوتي"""
         if not report1.person or not report2.person:
             return 0.0
         
-        name1 = str(report1.person).strip()
-        name2 = str(report2.person).strip()
+        name1 = self.normalize_arabic(str(report1.person))
+        name2 = self.normalize_arabic(str(report2.person))
         
         if not name1 or not name2:
             return 0.0
         
-        # تطابق تام
+        # تطابق تام بعد التوحيد
         if name1 == name2:
             return 1.0
+            
+        # استخدام خوارزمية Jaro-Winkler للأسماء
+        jaro_sim = jellyfish.jaro_winkler_similarity(name1, name2)
         
-        # تطابق جزئي - إذا كان أحد الأسماء يحتوي على الآخر
-        if name1 in name2 or name2 in name1:
-            return 0.8
+        # استخدام Levenshtein للكلمات المشتركة
+        words1 = name1.split()
+        words2 = name2.split()
         
-        # حساب التشابه بناءً على الكلمات المشتركة
-        words1 = set(name1.split())
-        words2 = set(name2.split())
+        match_count = 0
+        for w1 in words1:
+            for w2 in words2:
+                if jellyfish.levenshtein_distance(w1, w2) <= 1:
+                    match_count += 1
+                    break
         
-        if not words1 or not words2:
-            return 0.0
+        word_sim = (2 * match_count) / (len(words1) + len(words2)) if (len(words1) + len(words2)) > 0 else 0.0
         
-        common_words = words1.intersection(words2)
-        total_words = words1.union(words2)
+        # النتيجة النهائية هي مزيج بينهما
+        final_score = (jaro_sim * 0.4) + (word_sim * 0.6)
         
-        similarity = len(common_words) / len(total_words) if total_words else 0.0
-        
-        return similarity
+        return final_score
 
     def calculate_hybrid_score(self, report1, report2):
         """حساب درجة المطابقة الهجينة مع تفاصيل توضيحية"""
@@ -357,7 +376,7 @@ class ReportMatcher:
             target_reports = Report.objects.filter(
                 report_type=target_type,
                 status='active'
-            ).exclude(id=report.id).select_related(
+            ).exclude(report_id=report.report_id).select_related(
                 'person', 
                 'lost_governorate', 'lost_district', 'lost_uzlah'
             )

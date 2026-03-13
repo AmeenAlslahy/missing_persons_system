@@ -25,7 +25,7 @@ class MatchResultViewSet(viewsets.ModelViewSet):
     إدارة نتائج المطابقة
     """
     queryset = MatchResult.objects.all()
-    permission_classes = [permissions.IsAuthenticated, IsVolunteerOrHigher]
+    permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter, filters.SearchFilter]
     filterset_fields = {
         'match_status': ['exact'],
@@ -69,6 +69,20 @@ class MatchResultViewSet(viewsets.ModelViewSet):
     def review(self, request, pk=None):
         """مراجعة مطابقة مع خيارات متقدمة"""
         match_result = self.get_object()
+        
+        # Verify Permissions: Only Staff or the owners of the reports can accept/reject matches
+        is_owner = False
+        if request.user.is_authenticated:
+            # report_1 is typically missing, report_2 is typically found
+            if request.user == match_result.report_1.user or request.user == match_result.report_2.user:
+                is_owner = True
+                
+        if not (request.user.is_staff or is_owner):
+            return Response(
+                {"error": "عذراً، لا تمتلك الصلاحية لتأكيد هذه المطابقة. هذا الإجراء متاح فقط لمشرفي النظام أو أصحاب البلاغ."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         serializer = MatchReviewRequestSerializer(data=request.data)
         
         if not serializer.is_valid():
@@ -80,7 +94,14 @@ class MatchResultViewSet(viewsets.ModelViewSet):
         # تحديث الحالة حسب القرار
         if decision == 'accept':
             match_result.match_status = 'accepted'
-            message = 'تم قبول المطابقة'
+            message = 'تم قبول المطابقة وحل البلاغات المرتبطة'
+            
+            # تغيير حالة البلاغات إلى محلول
+            match_result.report_1.status = 'resolved'
+            match_result.report_2.status = 'resolved'
+            match_result.report_1.save(update_fields=['status'])
+            match_result.report_2.save(update_fields=['status'])
+            
         elif decision == 'reject':
             match_result.match_status = 'rejected'
             message = 'تم رفض المطابقة'
@@ -96,12 +117,23 @@ class MatchResultViewSet(viewsets.ModelViewSet):
         match_result.review_notes = notes
         match_result.save()
         
-        # تسجيل في سجل التدقيق
+        # تسجيل في سجل التدقيق المخصص للمطابقات
         MatchingAuditLog.objects.create(
             action_type='review',
             status='success',
             message=f"تم {message} للمطابقة {match_result.match_id}",
             created_by=request.user
+        )
+        
+        # تسجيل في نظام التدقيق الشامل
+        from audit.services import AuditService
+        AuditService.log_action(
+            user=request.user,
+            action='REVIEW',
+            resource_type='MatchResult',
+            resource_id=str(match_result.match_id),
+            data_after={'decision': decision, 'notes': notes},
+            request=request
         )
         
         return Response({

@@ -195,6 +195,117 @@ class ReportReviewSerializer(serializers.Serializer):
         return data
 
 
+class PersonSearchSerializer(serializers.ModelSerializer):
+    """سرياليزر للبحث عن الأشخاص"""
+    full_name = serializers.ReadOnlyField()
+    primary_photo = serializers.SerializerMethodField()
+    last_report = serializers.SerializerMethodField()
+    home_governorate_name = serializers.CharField(source='home_governorate.name_ar', read_only=True)
+    home_district_name = serializers.CharField(source='home_district.name_ar', read_only=True)
+    home_uzlah_name = serializers.CharField(source='home_uzlah.name_ar', read_only=True)
+    similarity = serializers.FloatField(read_only=True, default=0.0)
+
+    class Meta:
+        model = Person
+        fields = [
+            'person_id', 'full_name', 'first_name', 'middle_name', 'last_name',
+            'date_of_birth', 'gender', 'blood_type', 'chronic_conditions',
+            'permanent_marks', 'height', 'weight', 'body_build', 'skin_color',
+            'hair_color', 'eye_color', 'description',
+            'home_governorate', 'home_governorate_name',
+            'home_district', 'home_district_name',
+            'home_uzlah', 'home_uzlah_name',
+            'primary_photo', 'last_report', 'similarity'
+        ]
+
+    def get_primary_photo(self, obj):
+        last_report = obj.reports.order_by('-created_at').first()
+        if last_report:
+            first_image = last_report.images.first()
+            if first_image and first_image.image_path:
+                request = self.context.get('request')
+                if request:
+                    try:
+                        return request.build_absolute_uri(first_image.image_path.url)
+                    except Exception:
+                        return first_image.image_path.url
+                return first_image.image_path.url
+        return None
+
+    def get_last_report(self, obj):
+        last_report = obj.reports.order_by('-created_at').first()
+        if last_report:
+            return {
+                'report_id': last_report.report_id,
+                'report_code': last_report.report_code,
+                'report_type': last_report.report_type,
+                'status': last_report.status,
+                'created_at': last_report.created_at,
+                'last_seen_date': last_report.last_seen_date,
+                'lost_governorate_name': last_report.lost_governorate.name_ar if last_report.lost_governorate else None,
+            }
+        return None
+
+
+class ReportFromExistingPersonSerializer(serializers.ModelSerializer):
+    """سرياليزر لإنشاء بلاغ من شخص موجود مسبقاً"""
+    
+    report_type = serializers.ChoiceField(choices=Report.REPORT_TYPES, required=True)
+    last_seen_date = serializers.DateField(required=True)
+    last_seen_time = serializers.TimeField(required=False, allow_null=True)
+    
+    lost_governorate = serializers.PrimaryKeyRelatedField(
+        queryset=Governorate.objects.all(), required=True
+    )
+    lost_district = serializers.PrimaryKeyRelatedField(
+        queryset=District.objects.all(), required=True
+    )
+    lost_uzlah = serializers.PrimaryKeyRelatedField(
+        queryset=Uzlah.objects.all(), required=False, allow_null=True
+    )
+    lost_location_details = serializers.CharField(required=False, allow_blank=True)
+    
+    health_at_loss = serializers.CharField(required=True)
+    medications = serializers.CharField(required=False, allow_blank=True)
+    clothing_description = serializers.CharField(required=False, allow_blank=True)
+    possessions = serializers.CharField(required=False, allow_blank=True)
+    
+    contact_phone = serializers.CharField(required=True)
+    contact_person = serializers.CharField(required=False, allow_blank=True)
+    
+    images = serializers.ListField(
+        child=serializers.ImageField(),
+        write_only=True,
+        required=False,
+        max_length=5
+    )
+    
+    class Meta:
+        model = Report
+        fields = [
+            'report_type', 'last_seen_date', 'last_seen_time',
+            'lost_governorate', 'lost_district', 'lost_uzlah', 'lost_location_details',
+            'health_at_loss', 'medications', 'clothing_description', 'possessions',
+            'contact_phone', 'contact_person',
+            'images'
+        ]
+    
+    def create(self, validated_data):
+        person = self.context['person']
+        images = validated_data.pop('images', [])
+        
+        validated_data['person'] = person
+        validated_data['user'] = self.context['request'].user
+        
+        report = Report.objects.create(**validated_data)
+        
+        # معالجة الصور المرفوعة
+        for image in images:
+            ReportImage.objects.create(report=report, image_path=image)
+        
+        return report
+
+
 class ReportCloseSerializer(serializers.Serializer):
     """سرياليزر إغلاق البلاغ"""
     close_reason = serializers.CharField(required=True)

@@ -18,6 +18,7 @@ urlpatterns = [
     path('dashboard/', views.DashboardView.as_view(), name='dashboard'),
     path('generate-report/', views.GenerateReportView.as_view(), name='generate-report'),
     path('overall-stats/', views.AnalyticsStatisticsView.as_view(), name='overall-stats'),
+    path('stats/', views.AnalyticsStatisticsView.as_view(), name='analytics-stats'),  # alias
 ]
 
 # تحديد اسم التطبيق للمسارات العكسية

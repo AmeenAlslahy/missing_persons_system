@@ -126,12 +126,18 @@ class MatchResultDetailSerializer(MatchResultSerializer):
     """سرياليزر تفصيلي لنتائج المطابقة"""
     contact_info = serializers.SerializerMethodField()
     match_details = serializers.JSONField(read_only=True)
+    reviewed_by_name = serializers.SerializerMethodField()
     
     class Meta(MatchResultSerializer.Meta):
         fields = MatchResultSerializer.Meta.fields + [
-            'match_reason', 'match_details', 'reviewed_by', 
+            'match_reason', 'match_details', 'reviewed_by', 'reviewed_by_name',
             'reviewed_at', 'review_notes', 'contact_info'
         ]
+
+    def get_reviewed_by_name(self, obj):
+        if obj.reviewed_by:
+            return obj.reviewed_by.full_name
+        return None
 
     def get_contact_info(self, obj):
         """إظهار بيانات الاتصال فقط بعد قبول التطابق"""
