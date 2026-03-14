@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
 from datetime import date
 from reports.models import Report
-from .models import MatchResult
+from .models import MatchResult, MatchFeedback
 
 
 class MatchResultSerializer(serializers.ModelSerializer):
@@ -26,6 +26,9 @@ class MatchResultSerializer(serializers.ModelSerializer):
     match_status_display = serializers.CharField(source='get_match_status_display', read_only=True)
     priority_level_display = serializers.CharField(source='get_priority_level_display', read_only=True)
     
+    time_difference = serializers.FloatField(source='time_difference_hours', read_only=True)
+    view_count = serializers.IntegerField(read_only=True)
+    
     class Meta:
         model = MatchResult
         fields = [
@@ -38,9 +41,10 @@ class MatchResultSerializer(serializers.ModelSerializer):
             'missing_report_image', 'found_report_image',
             'similarity_score', 'confidence_level', 'confidence_level_display',
             'match_type', 'match_type_display', 'match_status', 'match_status_display',
-            'priority_level', 'priority_level_display', 'detected_at', 'updated_at'
+            'priority_level', 'priority_level_display', 
+            'detected_at', 'updated_at', 'time_difference', 'view_count'
         ]
-        read_only_fields = ['match_id', 'detected_at', 'updated_at']
+        read_only_fields = ['match_id', 'detected_at', 'updated_at', 'view_count']
     
     def get_person_age(self, person):
         """حساب العمر من تاريخ الميلاد"""
@@ -72,12 +76,12 @@ class MatchResultSerializer(serializers.ModelSerializer):
     def get_missing_report_gender(self, obj):
         """الحصول على جنس المفقود"""
         missing = obj.missing_report
-        return missing.person.gender if missing and missing.person else None
+        return missing.person.get_gender_display() if missing and missing.person else None
     
     def get_found_report_gender(self, obj):
         """الحصول على جنس المعثور عليه"""
         found = obj.found_report
-        return found.person.gender if found and found.person else None
+        return found.person.get_gender_display() if found and found.person else None
     
     def get_missing_report_city(self, obj):
         """الحصول على مدينة المفقود (موقع الفقدان)"""
@@ -123,15 +127,18 @@ class MatchResultSerializer(serializers.ModelSerializer):
 
 
 class MatchResultDetailSerializer(MatchResultSerializer):
-    """سرياليزر تفصيلي لنتائج المطابقة"""
+    """سرياليزر تفصيلي محسن لنتائج المطابقة"""
     contact_info = serializers.SerializerMethodField()
     match_details = serializers.JSONField(read_only=True)
     reviewed_by_name = serializers.SerializerMethodField()
+    similarity_breakdown = serializers.SerializerMethodField()
+    feedback_stats = serializers.SerializerMethodField()
     
     class Meta(MatchResultSerializer.Meta):
         fields = MatchResultSerializer.Meta.fields + [
             'match_reason', 'match_details', 'reviewed_by', 'reviewed_by_name',
-            'reviewed_at', 'review_notes', 'contact_info'
+            'reviewed_at', 'review_notes', 'contact_info',
+            'similarity_breakdown', 'feedback_stats'
         ]
 
     def get_reviewed_by_name(self, obj):
@@ -151,6 +158,32 @@ class MatchResultDetailSerializer(MatchResultSerializer):
                 'found_person': found.contact_person if found else None,
             }
         return None
+    
+    def get_similarity_breakdown(self, obj):
+        """تحليل تفصيلي لعناصر التشابه"""
+        details = obj.match_details or {}
+        return {
+            'face': round(details.get('face_similarity', 0), 2),
+            'name': round(details.get('name_match', 0), 2),
+            'location': round(details.get('location_match', 0), 2),
+            'features': round(details.get('feature_match', 0), 2)
+        }
+    
+    def get_feedback_stats(self, obj):
+        """إحصائيات تقييمات المستخدمين"""
+        feedback = obj.feedback.all()
+        total = feedback.count()
+        if total == 0:
+            return None
+        
+        correct = feedback.filter(is_correct=True).count()
+        avg_rating = feedback.aggregate(avg=models.Avg('rating'))['avg']
+        
+        return {
+            'total_feedback': total,
+            'correct_percentage': round((correct / total) * 100, 1),
+            'average_rating': round(avg_rating, 1) if avg_rating else None
+        }
 
 
 class MatchReviewRequestSerializer(serializers.Serializer):
@@ -186,6 +219,16 @@ class MatchRequestSerializer(serializers.Serializer):
         return value
 
 
+class MatchFeedbackSerializer(serializers.ModelSerializer):
+    """سرياليزر لتقييم المطابقات"""
+    user_name = serializers.CharField(source='user.full_name', read_only=True)
+    
+    class Meta:
+        model = MatchFeedback
+        fields = ['id', 'match', 'user', 'user_name', 'is_correct', 'rating', 'comments', 'created_at']
+        read_only_fields = ['user', 'created_at']
+
+
 class MatchStatisticsSerializer(serializers.Serializer):
     """سرياليزر لإحصائيات المطابقة"""
     total_matches = serializers.IntegerField()
@@ -196,3 +239,15 @@ class MatchStatisticsSerializer(serializers.Serializer):
     avg_similarity = serializers.FloatField()
     by_priority = serializers.DictField()
     by_confidence = serializers.DictField()
+    success_rate = serializers.FloatField()
+    avg_response_time = serializers.FloatField()
+
+
+class AdvancedMatchStatisticsSerializer(serializers.Serializer):
+    """سرياليزر للإحصائيات المتقدمة"""
+    overall = serializers.DictField()
+    time_based = serializers.DictField()
+    performance = serializers.DictField()
+    by_type = serializers.DictField()
+    by_confidence = serializers.DictField()
+    by_priority = serializers.DictField()

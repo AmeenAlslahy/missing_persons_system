@@ -33,7 +33,8 @@ urlpatterns = [
     path('api/analytics/', include('analytics.urls')),  # مرة واحدة فقط
     path('api/matching/', include('matching.urls')),
     path('api/notifications/', include('notifications.urls')),
-    path('api/locations/', include('locations.urls')),  # إضافة المسار المفقود
+    path('api/locations/', include('locations.urls')),
+    path('api/audit/', include('audit.urls')),
     
     # API Documentation
     path('swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),

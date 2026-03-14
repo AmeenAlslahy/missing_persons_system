@@ -62,9 +62,6 @@
                 <input type="number" name="max_age" class="form-control" placeholder="أكبر عمر">
             </div>
             <div class="col-md-2">
-                <input type="text" name="health_condition" class="form-control" placeholder="الحالة الصحية...">
-            </div>
-            <div class="col-md-2">
                 <select name="lost_governorate" class="form-select" id="governorate-filter">
                     <option value="">كل المحافظات</option>
                 </select>
@@ -90,15 +87,19 @@
 </div>
 
 <div class="row" id="reports-container">
-    <!-- Reports will be loaded here as cards -->
+    <div class="col-12 text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">جاري التحميل...</span>
+        </div>
+    </div>
 </div>
 
 <div class="d-flex justify-content-center mt-4" id="pagination-container">
-    <!-- Pagination buttons -->
+    <!-- Pagination will be loaded here -->
 </div>
 
 <!-- Modal for Creating New Report -->
-<div class="modal fade" id="createReportModal" tabindex="-1">
+<div class="modal fade" id="createReportModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
@@ -118,27 +119,30 @@
                             </select>
                         </div>
 
-                        <!-- الاسم الأول والثاني والثالث -->
+                        <!-- الاسم -->
                         <div class="col-md-4">
                             <label class="form-label">الاسم الأول <span class="text-danger">*</span></label>
-                            <input type="text" name="person_first_name" class="form-control" required>
+                            <input type="text" name="person_first_name" class="form-control" required
+                                id="person-first-name-input" autocomplete="off">
+                            <input type="hidden" name="person_id" id="person-id-input">
+                            <div id="person-search-results" class="list-group position-absolute w-100 shadow-sm" style="z-index: 1050; display: none;"></div>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">الاسم الأوسط</label>
-                            <input type="text" name="person_middle_name" class="form-control">
+                            <input type="text" name="person_middle_name" class="form-control" maxlength="150">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">اللقب <span class="text-danger">*</span></label>
-                            <input type="text" name="person_last_name" class="form-control" required>
+                            <input type="text" name="person_last_name" class="form-control" required maxlength="150">
                         </div>
 
-                        <!-- تاريخ الميلاد / العمر التقريبي - يظهر حسب نوع البلاغ -->
+                        <!-- تاريخ الميلاد / العمر التقريبي -->
                         <div class="col-md-3" id="birth-date-field">
-                            <label class="form-label">تاريخ الميلاد <span class="text-danger" id="birth-required">*</span></label>
+                            <label class="form-label">تاريخ الميلاد</label>
                             <input type="date" name="person_date_of_birth" class="form-control" id="birth-date-input">
                         </div>
                         <div class="col-md-3" id="approx-age-field" style="display: none;">
-                            <label class="form-label">العمر التقريبي <span class="text-danger" id="age-required">*</span></label>
+                            <label class="form-label">العمر التقريبي</label>
                             <input type="number" name="approx_age" class="form-control" id="approx-age-input" min="0" max="150">
                         </div>
                         
@@ -165,7 +169,7 @@
                             </select>
                         </div>
 
-                        <!-- موقع الفقدان/العثور (إجباري) -->
+                        <!-- موقع الفقدان/العثور -->
                         <div class="col-12">
                             <h6 class="border-bottom pb-2 my-2 text-primary">موقع الفقدان/العثور <span class="text-danger">*</span></h6>
                         </div>
@@ -192,30 +196,6 @@
                             <label class="form-label">تفاصيل الموقع</label>
                             <input type="text" name="lost_location_details" class="form-control" 
                                    placeholder="مثال: بالقرب من المستشفى الجمهوري...">
-                        </div>
-
-                        <!-- موقع السكن (اختياري) -->
-                        <div class="col-12">
-                            <h6 class="border-bottom pb-2 my-2 text-secondary">موقع السكن (اختياري)</h6>
-                        </div>
-
-                        <div class="col-md-4">
-                            <label class="form-label">محافظة السكن</label>
-                            <select name="home_governorate" class="form-select" id="home-governorate-select">
-                                <option value="">اختر المحافظة...</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">مديرية السكن</label>
-                            <select name="home_district" class="form-select" id="home-district-select" disabled>
-                                <option value="">اختر المديرية...</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">عزلة السكن</label>
-                            <select name="home_uzlah" class="form-select" id="home-uzlah-select" disabled>
-                                <option value="">اختر العزلة...</option>
-                            </select>
                         </div>
 
                         <!-- تاريخ ووقت آخر مشاهدة/عثور -->
@@ -258,85 +238,14 @@
                                 placeholder="مثال: هاتف، حقيبة، عصا">
                         </div>
 
-                        <!-- المواصفات الجسدية -->
-                        <div class="col-12">
-                            <h6 class="border-bottom pb-2 my-2 text-primary">المواصفات الجسدية</h6>
-                        </div>
-
-                        <div class="col-md-3">
-                            <label class="form-label">الطول (سم)</label>
-                            <input type="number" name="person_height" class="form-control" step="0.1" min="0">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">الوزن (كجم)</label>
-                            <input type="number" name="person_weight" class="form-control" step="0.1" min="0">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">البنية الجسدية</label>
-                            <select name="person_body_build" class="form-select">
-                                <option value="">اختر...</option>
-                                <option value="slim">نحيف</option>
-                                <option value="average">متوسط</option>
-                                <option value="athletic">رياضي</option>
-                                <option value="heavy">ممتلئ</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">لون البشرة</label>
-                            <select name="person_skin_color" class="form-select">
-                                <option value="">اختر...</option>
-                                <option value="light">فاتح</option>
-                                <option value="fair">حنطي</option>
-                                <option value="medium">متوسط</option>
-                                <option value="olive">خمري</option>
-                                <option value="brown">أسمر</option>
-                                <option value="black">أسود</option>
-                            </select>
-                        </div>
-
-                        <div class="col-md-3">
-                            <label class="form-label">لون الشعر</label>
-                            <select name="person_hair_color" class="form-select">
-                                <option value="">اختر...</option>
-                                <option value="black">أسود</option>
-                                <option value="brown">بني</option>
-                                <option value="blonde">أشقر</option>
-                                <option value="red">أحمر</option>
-                                <option value="white">أبيض</option>
-                                <option value="grey">رمادي</option>
-                                <option value="bald">أصلع</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">لون العينين</label>
-                            <select name="person_eye_color" class="form-select">
-                                <option value="">اختر...</option>
-                                <option value="black">أسود</option>
-                                <option value="brown">بني</option>
-                                <option value="hazel">عسلي</option>
-                                <option value="green">أخضر</option>
-                                <option value="blue">أزرق</option>
-                                <option value="grey">رمادي</option>
-                            </select>
-                        </div>
-
-                        <!-- أمراض مزمنة وعلامات دائمة -->
-                        <div class="col-md-6">
-                            <label class="form-label">أمراض مزمنة</label>
-                            <input type="text" name="person_chronic_conditions" class="form-control"
-                                placeholder="مثال: سكري، ضغط، ربو">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">علامات دائمة</label>
-                            <input type="text" name="person_permanent_marks" class="form-control"
-                                placeholder="ندوب، وشوم، علامات مميزة">
-                        </div>
-
-                        <!-- وصف إضافي -->
-                        <div class="col-12">
-                            <label class="form-label">وصف إضافي</label>
-                            <textarea name="person_description" class="form-control" rows="2"
-                                placeholder="أوصاف إضافية، تفاصيل مهمة..."></textarea>
+                        <div class="col-12" id="image-consent-container" style="display: none;">
+                            <div class="form-check card bg-light p-3">
+                                <input class="form-check-input" type="checkbox" name="image_consent_given" id="image-consent-check">
+                                <label class="form-check-label ms-2" for="image-consent-check">
+                                    <strong>إقرار بالموافقة على نشر الصور <span class="text-danger">*</span></strong><br>
+                                    <small class="text-muted">أقر أنا صاحب البلاغ بالموافقة على نشر صور المفقود (خاصة للقاصرين والإناث) للمساعدة في عملية البحث والمطابقة.</small>
+                                </label>
+                            </div>
                         </div>
 
                         <!-- معلومات التواصل -->
@@ -385,7 +294,7 @@
     </div>
 </div>
 
-<!-- Modal for Re-action (Accept/Reject/Resolve) -->
+<!-- Modal for Report Actions -->
 <div class="modal fade" id="reportActionModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -398,17 +307,17 @@
                 <input type="hidden" id="target-report-action">
 
                 <div class="mb-3" id="rejection-reason-container" style="display: none;">
-                    <label class="form-label">سبب الرفض</label>
-                    <textarea id="rejection-reason" class="form-control" rows="3"></textarea>
+                    <label class="form-label">سبب الرفض <span class="text-danger">*</span></label>
+                    <textarea id="rejection-reason" class="form-control" rows="3" placeholder="يرجى ذكر سبب الرفض"></textarea>
                 </div>
 
                 <div class="mb-3" id="close-reason-container" style="display: none;">
-                    <label class="form-label">سبب الإغلاق</label>
+                    <label class="form-label">سبب الإغلاق <span class="text-danger">*</span></label>
                     <textarea id="close-reason" class="form-control" rows="3"
                         placeholder="مثلاً: تم العثور عليه في المستشفى الجمهوري بصحة جيدة..."></textarea>
                 </div>
 
-                <div class="mb-3">
+                <div class="mb-3" id="review-notes-container">
                     <label class="form-label">ملاحظات إضافية</label>
                     <textarea id="review-notes" class="form-control" rows="2"></textarea>
                 </div>
@@ -426,8 +335,9 @@
 <script>
     $(document).ready(function () {
         let currentPage = 1;
+        let totalPages = 1;
 
-        // ✅ تحميل قائمة المحافظات للفلتر
+        // تحميل المحافظات
         function loadGovernorates() {
             $.get('/api/locations/governorates/', function (data) {
                 let options = '<option value="">كل المحافظات</option>';
@@ -435,159 +345,19 @@
                     options += `<option value="${gov.id}">${gov.name_ar || gov.name}</option>`;
                 });
                 $('#governorate-filter').html(options);
-            }).fail(function() {
-                console.error('فشل تحميل المحافظات');
-            });
-        }
-
-        // ✅ تحميل قائمة المحافظات لموقع الفقدان
-        function loadLostGovernorates() {
-            $.get('/api/locations/governorates/', function (data) {
-                let options = '<option value="">اختر المحافظة...</option>';
+                
+                // تحميل محافظات موقع الفقدان
+                let lostOptions = '<option value="">اختر المحافظة...</option>';
                 (data.results || data).forEach(gov => {
-                    options += `<option value="${gov.id}">${gov.name_ar || gov.name}</option>`;
+                    lostOptions += `<option value="${gov.id}">${gov.name_ar || gov.name}</option>`;
                 });
-                $('#lost-governorate-select').html(options);
-            }).fail(function() {
-                console.error('فشل تحميل المحافظات');
+                $('#lost-governorate-select').html(lostOptions);
+            }).fail(function(xhr) {
+                console.error('فشل تحميل المحافظات:', xhr);
             });
         }
 
-        // ✅ تحميل قائمة المحافظات لموقع السكن
-        function loadHomeGovernorates() {
-            $.get('/api/locations/governorates/', function (data) {
-                let options = '<option value="">اختر المحافظة...</option>';
-                (data.results || data).forEach(gov => {
-                    options += `<option value="${gov.id}">${gov.name_ar || gov.name}</option>`;
-                });
-                $('#home-governorate-select').html(options);
-            }).fail(function() {
-                console.error('فشل تحميل المحافظات');
-            });
-        }
-
-        // ✅ تحميل جميع المحافظات عند بدء الصفحة
-        loadGovernorates();
-        loadLostGovernorates();
-        loadHomeGovernorates();
-
-        // ✅ عند تغيير نوع البلاغ
-        $('#report-type-select').change(function () {
-            let reportType = $(this).val();
-            
-            if (reportType === 'missing') {
-                // مفقود: تاريخ الميلاد إجباري، العمر التقريبي مخفي
-                $('#birth-date-field').show();
-                $('#approx-age-field').hide();
-                $('#birth-date-input').prop('required', true);
-                $('#approx-age-input').prop('required', false).val('');
-                $('#birth-required').show();
-                $('#age-required').hide();
-            } else if (reportType === 'found') {
-                // معثور عليه: العمر التقريبي إجباري، تاريخ الميلاد مخفي
-                $('#birth-date-field').hide();
-                $('#approx-age-field').show();
-                $('#birth-date-input').prop('required', false).val('');
-                $('#approx-age-input').prop('required', true);
-                $('#birth-required').hide();
-                $('#age-required').show();
-            } else {
-                // لا شيء مختار
-                $('#birth-date-field').show();
-                $('#approx-age-field').hide();
-                $('#birth-date-input').prop('required', false);
-                $('#approx-age-input').prop('required', false);
-            }
-        });
-
-        // ✅ عند تغيير المحافظة في موقع الفقدان
-        $('#lost-governorate-select').change(function () {
-            let govId = $(this).val();
-            let districtSelect = $('#lost-district-select');
-            let uzlahSelect = $('#lost-uzlah-select');
-            
-            // إعادة تعيين القوائم
-            districtSelect.html('<option value="">اختر المديرية...</option>').prop('disabled', true);
-            uzlahSelect.html('<option value="">اختر العزلة...</option>').prop('disabled', true);
-            
-            if (govId) {
-                // ✅ تحميل المديريات
-                $.get(`/api/locations/districts/?governorate=${govId}`, function (data) {
-                    let options = '<option value="">اختر المديرية...</option>';
-                    (data.results || data).forEach(dist => {
-                        options += `<option value="${dist.id}">${dist.name_ar || dist.name}</option>`;
-                    });
-                    districtSelect.html(options).prop('disabled', false);
-                }).fail(function() {
-                    console.error('فشل تحميل المديريات');
-                });
-            }
-        });
-
-        // ✅ عند تغيير المديرية في موقع الفقدان
-        $('#lost-district-select').change(function () {
-            let distId = $(this).val();
-            let uzlahSelect = $('#lost-uzlah-select');
-            
-            uzlahSelect.html('<option value="">اختر العزلة...</option>').prop('disabled', true);
-            
-            if (distId) {
-                // ✅ تحميل العزل
-                $.get(`/api/locations/uzlahs/?district=${distId}`, function (data) {
-                    let options = '<option value="">اختر العزلة...</option>';
-                    (data.results || data).forEach(uzlah => {
-                        options += `<option value="${uzlah.id}">${uzlah.name_ar || uzlah.name}</option>`;
-                    });
-                    uzlahSelect.html(options).prop('disabled', false);
-                }).fail(function() {
-                    console.error('فشل تحميل العزل');
-                });
-            }
-        });
-
-        // ✅ عند تغيير المحافظة في موقع السكن
-        $('#home-governorate-select').change(function () {
-            let govId = $(this).val();
-            let districtSelect = $('#home-district-select');
-            let uzlahSelect = $('#home-uzlah-select');
-            
-            districtSelect.html('<option value="">اختر المديرية...</option>').prop('disabled', true);
-            uzlahSelect.html('<option value="">اختر العزلة...</option>').prop('disabled', true);
-            
-            if (govId) {
-                $.get(`/api/locations/districts/?governorate=${govId}`, function (data) {
-                    let options = '<option value="">اختر المديرية...</option>';
-                    (data.results || data).forEach(dist => {
-                        options += `<option value="${dist.id}">${dist.name_ar || dist.name}</option>`;
-                    });
-                    districtSelect.html(options).prop('disabled', false);
-                }).fail(function() {
-                    console.error('فشل تحميل المديريات');
-                });
-            }
-        });
-
-        // ✅ عند تغيير المديرية في موقع السكن
-        $('#home-district-select').change(function () {
-            let distId = $(this).val();
-            let uzlahSelect = $('#home-uzlah-select');
-            
-            uzlahSelect.html('<option value="">اختر العزلة...</option>').prop('disabled', true);
-            
-            if (distId) {
-                $.get(`/api/locations/uzlahs/?district=${distId}`, function (data) {
-                    let options = '<option value="">اختر العزلة...</option>';
-                    (data.results || data).forEach(uzlah => {
-                        options += `<option value="${uzlah.id}">${uzlah.name_ar || uzlah.name}</option>`;
-                    });
-                    uzlahSelect.html(options).prop('disabled', false);
-                }).fail(function() {
-                    console.error('فشل تحميل العزل');
-                });
-            }
-        });
-
-        // ✅ عند تغيير المحافظة في الفلتر
+        // عند تغيير المحافظة في الفلتر
         $('#governorate-filter').change(function () {
             let govId = $(this).val();
             let districtFilter = $('#district-filter');
@@ -595,27 +365,120 @@
             districtFilter.html('<option value="">كل المديريات</option>').prop('disabled', true);
             
             if (govId) {
-                $.get(`/api/locations/districts/?governorate=${govId}`, function (data) {
+                $.get(`/api/districts/?governorate=${govId}`, function (data) {
                     let options = '<option value="">كل المديريات</option>';
                     (data.results || data).forEach(dist => {
                         options += `<option value="${dist.id}">${dist.name_ar || dist.name}</option>`;
                     });
                     districtFilter.html(options).prop('disabled', false);
-                }).fail(function() {
-                    console.error('فشل تحميل المديريات');
+                }).fail(function(xhr) {
+                    console.error('فشل تحميل المديريات:', xhr);
                 });
             }
         });
 
+        // عند تغيير المحافظة في موقع الفقدان
+        $('#lost-governorate-select').change(function () {
+            let govId = $(this).val();
+            let districtSelect = $('#lost-district-select');
+            let uzlahSelect = $('#lost-uzlah-select');
+            
+            districtSelect.html('<option value="">اختر المديرية...</option>').prop('disabled', true);
+            uzlahSelect.html('<option value="">اختر العزلة...</option>').prop('disabled', true);
+            
+            if (govId) {
+                $.get(`/api/districts/?governorate=${govId}`, function (data) {
+                    let options = '<option value="">اختر المديرية...</option>';
+                    (data.results || data).forEach(dist => {
+                        options += `<option value="${dist.id}">${dist.name_ar || dist.name}</option>`;
+                    });
+                    districtSelect.html(options).prop('disabled', false);
+                }).fail(function(xhr) {
+                    console.error('فشل تحميل المديريات:', xhr);
+                });
+            }
+        });
+
+        $('#lost-district-select').change(function () {
+            let distId = $(this).val();
+            let uzlahSelect = $('#lost-uzlah-select');
+            
+            uzlahSelect.html('<option value="">اختر العزلة...</option>').prop('disabled', true);
+            
+            if (distId) {
+                $.get(`/api/locations/uzlahs/?district=${distId}`, function (data) {
+                    let options = '<option value="">اختر العزلة...</option>';
+                    (data.results || data).forEach(uzlah => {
+                        options += `<option value="${uzlah.id}">${uzlah.name_ar || uzlah.name}</option>`;
+                    });
+                    uzlahSelect.html(options).prop('disabled', false);
+                }).fail(function(xhr) {
+                    console.error('فشل تحميل العزل:', xhr);
+                });
+            }
+        });
+
+        // عند تغيير نوع البلاغ
+        $('#report-type-select').change(function () {
+            let reportType = $(this).val();
+            
+            if (reportType === 'missing') {
+                $('#birth-date-field').show();
+                $('#approx-age-field').hide();
+                $('#birth-date-input').prop('required', true);
+                $('#approx-age-input').prop('required', false).val('');
+            } else if (reportType === 'found') {
+                $('#birth-date-field').hide();
+                $('#approx-age-field').show();
+                $('#birth-date-input').prop('required', false).val('');
+                $('#approx-age-input').prop('required', true);
+            } else {
+                $('#birth-date-field').show();
+                $('#approx-age-field').hide();
+                $('#birth-date-input').prop('required', false);
+                $('#approx-age-input').prop('required', false);
+            }
+            checkConsentRequirement();
+        });
+
+        function checkConsentRequirement() {
+            let gender = $('select[name="person_gender"]').val();
+            let birthDate = $('#birth-date-input').val();
+            let approxAge = $('#approx-age-input').val();
+            let reportType = $('#report-type-select').val();
+            
+            let isMinor = false;
+            if (reportType === 'missing' && birthDate) {
+                let age = new Date().getFullYear() - new Date(birthDate).getFullYear();
+                if (age < 18) isMinor = true;
+            } else if (reportType === 'found' && approxAge) {
+                if (parseInt(approxAge) < 18) isMinor = true;
+            }
+            
+            if (gender === 'F' || isMinor) {
+                $('#image-consent-container').slideDown();
+                // $('#image-consent-check').prop('required', true); // Removed as it might block form unnecessarily if hidden
+            } else {
+                $('#image-consent-container').slideUp();
+                $('#image-consent-check').prop('checked', false);
+            }
+        }
+
+        $('select[name="person_gender"], #birth-date-input, #approx-age-input').change(checkConsentRequirement);
+
         function loadReports(page = 1) {
             currentPage = page;
             let formData = $('#filter-form').serialize();
+            
             $.ajax({
                 url: `/api/reports/reports/?page=${page}&${formData}`,
                 method: 'GET',
                 success: function (response) {
-                    renderReports(response.results);
-                    renderPagination(response);
+                    renderReports(response.results || []);
+                    if (response.count) {
+                        totalPages = Math.ceil(response.count / (response.results?.length || 10));
+                        renderPagination(page, totalPages);
+                    }
                 },
                 error: function (xhr) {
                     console.error('Error loading reports:', xhr);
@@ -625,6 +488,11 @@
         }
 
         function renderReports(reports) {
+            if (!reports || reports.length === 0) {
+                $('#reports-container').html('<div class="col-12 text-center py-5"><p class="text-muted">لا توجد بلاغات</p></div>');
+                return;
+            }
+
             let html = '';
             reports.forEach(report => {
                 let statusBadge = '';
@@ -640,26 +508,22 @@
                 <div class="col-md-6 col-lg-4 mb-4">
                     <div class="card stat-card h-100 border-top ${report.importance === 'high' ? 'border-danger border-4' : ''}">
                         <div class="position-relative">
-                            <img src="${report.primary_photo || 'https://via.placeholder.com/400x300?text=No+Photo'}" class="card-img-top" style="height: 200px; object-fit: cover; border-radius: 12px 12px 0 0;">
-                            <div class="position-absolute top-0 start-0 m-2">
-                                ${statusBadge}
-                            </div>
-                            <div class="position-absolute top-0 end-0 m-2 d-flex flex-column gap-1 align-items-end">
+                            <img src="${report.primary_photo || 'https://via.placeholder.com/400x300?text=لا+توجد+صورة'}" class="card-img-top" style="height: 200px; object-fit: cover;">
+                            <div class="position-absolute top-0 start-0 m-2">${statusBadge}</div>
+                            <div class="position-absolute top-0 end-0 m-2">
                                 <span class="badge bg-dark">${report.report_type === 'missing' ? 'مفقود' : 'معثور عليه'}</span>
-                                ${report.importance === 'high' ? '<span class="badge bg-danger shadow-sm"><i class="fas fa-exclamation-triangle"></i> هام جداً</span>' : ''}
+                                ${report.importance === 'high' ? '<span class="badge bg-danger"><i class="fas fa-exclamation-triangle"></i> هام</span>' : ''}
                             </div>
                         </div>
                         <div class="card-body">
-                            <h5 class="card-title fw-bold">${report.person_name}</h5>
+                            <h5 class="card-title fw-bold">${report.person_name || '---'}</h5>
                             <div class="text-muted small mb-2">
                                 <i class="fas fa-map-marker-alt me-1"></i> 
-                                ${report.lost_governorate_name || ''} 
-                                ${report.lost_district_name ? '، ' + report.lost_district_name : ''}
-                                ${report.lost_uzlah_name ? '، ' + report.lost_uzlah_name : ''}
+                                ${report.lost_governorate_name || ''} ${report.lost_district_name ? '، ' + report.lost_district_name : ''}
                             </div>
                             <div class="d-flex justify-content-between mb-3 small">
                                 <span><i class="far fa-calendar-alt me-1"></i> ${new Date(report.last_seen_date).toLocaleDateString('ar-SA')}</span>
-                                <span><i class="fas fa-fingerprint me-1"></i> ${report.report_code}</span>
+                                <span><i class="fas fa-fingerprint me-1"></i> ${report.report_code || '---'}</span>
                             </div>
                             <div class="d-grid gap-2">
                                 ${report.status === 'pending' ? `
@@ -669,25 +533,61 @@
                                     </div>
                                 ` : ''}
                                 <div class="d-flex gap-1">
-                                    <button class="btn btn-primary btn-sm flex-grow-1" onclick="viewReportDetails('${report.report_id}')">عرض التفاصيل</button>
+                                    <button class="btn btn-primary btn-sm flex-grow-1" onclick="viewReportDetails('${report.report_id}')">
+                                        <i class="fas fa-eye me-1"></i> عرض التفاصيل
+                                    </button>
                                     ${report.importance !== 'high' && report.status === 'active' ? `
-                                        <button class="btn btn-outline-danger btn-sm" onclick="escalateReport('${report.report_id}')" title="تصعيد"><i class="fas fa-bolt"></i></button>
+                                        <button class="btn btn-outline-danger btn-sm" onclick="escalateReport('${report.report_id}')" title="تصعيد">
+                                            <i class="fas fa-bolt"></i>
+                                        </button>
                                     ` : ''}
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            `;
+                `;
             });
-            $('#reports-container').html(html || '<div class="col-12 text-center py-5"><p class="text-muted">لا توجد بلاغات تطابق البحث</p></div>');
+            $('#reports-container').html(html);
         }
 
-        function renderPagination(response) {
-            let html = '';
-            if (response.previous) html += `<button class="btn btn-sm btn-light border mx-1" onclick="loadReports(${currentPage - 1})">السابق</button>`;
-            if (response.next) html += `<button class="btn btn-sm btn-light border mx-1" onclick="loadReports(${currentPage + 1})">التالي</button>`;
+        function renderPagination(current, total) {
+            if (total <= 1) {
+                $('#pagination-container').empty();
+                return;
+            }
+            
+            let html = '<nav><ul class="pagination">';
+            
+            if (current > 1) {
+                html += `<li class="page-item"><a class="page-link" href="#" data-page="${current - 1}">السابق</a></li>`;
+            }
+            
+            for (let i = 1; i <= total; i++) {
+                if (i === current) {
+                    html += `<li class="page-item active"><span class="page-link">${i}</span></li>`;
+                } else if (i === 1 || i === total || (i >= current - 2 && i <= current + 2)) {
+                    html += `<li class="page-item"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+                } else if (i === current - 3 || i === current + 3) {
+                    html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                }
+            }
+            
+            if (current < total) {
+                html += `<li class="page-item"><a class="page-link" href="#" data-page="${current + 1}">التالي</a></li>`;
+            }
+            
+            html += '</ul></nav>';
             $('#pagination-container').html(html);
+            
+            // ربط أحداث النقر
+            $('#pagination-container .page-link').click(function(e) {
+                e.preventDefault();
+                let page = $(this).data('page');
+                if (page) {
+                    loadReports(page);
+                }
+            });
         }
 
         window.viewReportDetails = function (id) {
@@ -697,38 +597,36 @@
                 success: function (report) {
                     let html = `
                         <div class="modal-header bg-light">
-                            <h5 class="modal-title">تفاصيل البلاغ: ${report.person_name} (${report.report_code})</h5>
+                            <h5 class="modal-title">تفاصيل البلاغ: ${report.person_name || '---'} (${report.report_code || '---'})</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
                             <div class="row">
                                 <div class="col-md-4">
-                                    <img src="${report.primary_photo || 'https://via.placeholder.com/400x500?text=No+Photo'}" class="img-fluid rounded shadow-sm mb-3">
+                                    <img src="${report.primary_photo || 'https://via.placeholder.com/400x500?text=لا+توجد+صورة'}" class="img-fluid rounded shadow-sm mb-3">
                                     <div class="card bg-light border-0">
                                         <div class="card-body p-3">
                                             <h6>بيانات الاتصال</h6>
-                                            <p class="mb-1 small"><strong>الهاتف:</strong> ${report.contact_phone}</p>
+                                            <p class="mb-1 small"><strong>الهاتف:</strong> ${report.contact_phone || '---'}</p>
                                             ${report.contact_person ? `<p class="mb-1 small"><strong>جهة الاتصال:</strong> ${report.contact_person}</p>` : ''}
                                         </div>
                                     </div>
                                 </div>
                                 <div class="col-md-8">
-                                    <table class="table table-bordered">
+                                    <table class="table table-bordered small">
                                         <tr>
                                             <th>الاسم</th>
-                                            <td colspan="5">${report.person_name}</td>
+                                            <td colspan="3">${report.person_name || '---'}</td>
                                         </tr>
                                         <tr>
                                             <th>تاريخ الميلاد</th>
                                             <td>${report.person_date_of_birth || 'غير محدد'}</td>
                                             <th>الجنس</th>
                                             <td>${report.person_gender || ''}</td>
-                                            <th>فصيلة الدم</th>
-                                            <td>${report.person_blood_type || ''}</td>
                                         </tr>
                                         <tr>
                                             <th>موقع الفقدان</th>
-                                            <td colspan="5">
+                                            <td colspan="3">
                                                 ${report.lost_governorate_name || ''} 
                                                 ${report.lost_district_name ? '، ' + report.lost_district_name : ''}
                                                 ${report.lost_uzlah_name ? '، ' + report.lost_uzlah_name : ''}
@@ -736,28 +634,30 @@
                                             </td>
                                         </tr>
                                         <tr>
-                                            <th>موقع السكن</th>
-                                            <td colspan="5">
-                                                ${report.home_governorate_name || ''} 
-                                                ${report.home_district_name ? '، ' + report.home_district_name : ''}
-                                                ${report.home_uzlah_name ? '، ' + report.home_uzlah_name : ''}
-                                            </td>
-                                        </tr>
-                                        <tr>
                                             <th>تاريخ آخر مشاهدة</th>
                                             <td>${report.last_seen_date}</td>
-                                            <th>وقت آخر مشاهدة</th>
+                                            <th>الوقت</th>
                                             <td>${report.last_seen_time || ''}</td>
-                                            <th>تاريخ البلاغ</th>
-                                            <td>${new Date(report.created_at).toLocaleDateString('ar-SA')}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>الحالة</th>
+                                            <td><span class="badge ${report.status === 'active' ? 'bg-success' : 'bg-secondary'}">${report.status}</span></td>
+                                            <th>الأهمية</th>
+                                            <td><span class="badge ${report.importance === 'high' ? 'bg-danger' : 'bg-info'}">${report.importance}</span></td>
                                         </tr>
                                     </table>
                                     
                                     <div class="mt-4 d-flex gap-2">
-                                        <button class="btn btn-success" onclick="openReportModal('${report.report_id}', 'resolve', '${report.person_name}')">إغلاق وحل البلاغ</button>
-                                        <button class="btn btn-warning" onclick="escalateReport('${report.report_id}')">تصعيد (أهمية عالية)</button>
+                                        <button class="btn btn-success" onclick="openReportModal('${report.report_id}', 'resolve', '${report.person_name}')">
+                                            <i class="fas fa-check-circle me-1"></i> إغلاق وحل
+                                        </button>
+                                        <button class="btn btn-warning" onclick="escalateReport('${report.report_id}')">
+                                            <i class="fas fa-bolt me-1"></i> تصعيد
+                                        </button>
                                         ${report.status === 'pending' ? `
-                                        <button class="btn btn-danger" onclick="openReportModal('${report.report_id}', 'reject', '${report.person_name}')">رفض البلاغ</button>
+                                        <button class="btn btn-danger" onclick="openReportModal('${report.report_id}', 'reject', '${report.person_name}')">
+                                            <i class="fas fa-times-circle me-1"></i> رفض
+                                        </button>
                                         ` : ''}
                                     </div>
                                 </div>
@@ -768,37 +668,48 @@
                     $('#reportDetailsModal').modal('show');
                 },
                 error: function (xhr) {
+                    console.error('Error loading report details:', xhr);
                     alert('حدث خطأ في تحميل تفاصيل البلاغ');
                 }
             });
-        }
+        };
 
         window.escalateReport = function (id) {
             if (!confirm('هل أنت متأكد من تصعيد هذا البلاغ للأهمية القصوى؟')) return;
+            
             $.ajax({
                 url: `/api/reports/reports/${id}/escalate/`,
                 method: 'POST',
                 headers: { 'X-CSRFToken': '{{ csrf_token }}' },
                 success: function (res) {
-                    alert(res.message);
+                    alert(res.message || 'تم التصعيد بنجاح');
                     loadReports(currentPage);
                     $('#reportDetailsModal').modal('hide');
                 },
                 error: function (xhr) {
-                    alert('حدث خطأ: ' + (xhr.responseJSON?.message || 'غير معروف'));
+                    console.error('Error escalating report:', xhr);
+                    alert('حدث خطأ في تصعيد البلاغ');
                 }
             });
-        }
+        };
 
         window.openReportModal = function (reportId, action, personName) {
             $('#target-report-id').val(reportId);
             $('#target-report-action').val(action);
-            $('#reportActionTitle').text(`${action === 'resolve' ? 'إغلاق' : 'مراجعة'} بلاغ: ${personName}`);
+            $('#reportActionTitle').text(`${action === 'resolve' ? 'إغلاق' : 'مراجعة'} بلاغ: ${personName || ''}`);
 
-            $('#rejection-reason-container, #close-reason-container').hide();
+            $('#rejection-reason-container, #close-reason-container, #review-notes-container').hide();
+            $('#rejection-reason, #close-reason, #review-notes').val('');
 
-            if (action === 'reject') $('#rejection-reason-container').show();
-            if (action === 'resolve') $('#close-reason-container').show();
+            if (action === 'reject') {
+                $('#rejection-reason-container').show();
+                $('#review-notes-container').show();
+            } else if (action === 'resolve') {
+                $('#close-reason-container').show();
+                $('#review-notes-container').show();
+            } else if (action === 'accept') {
+                $('#review-notes-container').show();
+            }
 
             $('#reportActionModal').modal('show');
             $('#reportDetailsModal').modal('hide');
@@ -814,7 +725,7 @@
 
             if (action === 'reject') {
                 data.rejection_reason = $('#rejection-reason').val();
-                if (!data.rejection_reason) {
+                if (!data.rejection_reason || data.rejection_reason.length < 3) {
                     alert('يرجى ذكر سبب الرفض');
                     return;
                 }
@@ -823,7 +734,7 @@
             if (action === 'resolve') {
                 url = `/api/reports/reports/${reportId}/resolve/`;
                 data = { close_reason: $('#close-reason').val() };
-                if (!data.close_reason) {
+                if (!data.close_reason || data.close_reason.length < 3) {
                     alert('يرجى ذكر سبب الإغلاق');
                     return;
                 }
@@ -841,6 +752,7 @@
                     alert(response.message || 'تم تنفيذ الإجراء بنجاح');
                 },
                 error: function (xhr) {
+                    console.error('Error performing action:', xhr);
                     let errorMsg = 'حدث خطأ أثناء تنفيذ الإجراء';
                     if (xhr.responseJSON) {
                         if (xhr.responseJSON.detail) errorMsg = xhr.responseJSON.detail;
@@ -855,13 +767,11 @@
             let btn = $(this);
             let form = $('#create-report-form')[0];
             
-            // التحقق من صحة النموذج
             if (!form.checkValidity()) {
                 form.reportValidity();
                 return;
             }
             
-            // التحقق الإضافي حسب نوع البلاغ
             let reportType = $('#report-type-select').val();
             let birthDate = $('#birth-date-input').val();
             let approxAge = $('#approx-age-input').val();
@@ -876,14 +786,13 @@
                 return;
             }
 
-            // تعطيل الزر وإظهار حالة التحميل
             let originalText = btn.html();
-            btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> جارٍ النشر...').removeClass('btn-success').addClass('btn-secondary');
+            btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> جاري النشر...');
 
             let formData = new FormData(form);
 
             $.ajax({
-                url: '/api/reports/reports/',
+                url: `/api/reports/reports/`,
                 method: 'POST',
                 data: formData,
                 processData: false,
@@ -892,32 +801,31 @@
                 success: function (response) {
                     $('#createReportModal').modal('hide');
                     form.reset();
-                    // إعادة تعيين حقول المواقع المعطلة
-                    $('#lost-district-select, #lost-uzlah-select, #home-district-select, #home-uzlah-select').prop('disabled', true).html('<option value="">اختر...</option>');
+                    $('#lost-district-select, #lost-uzlah-select').prop('disabled', true).html('<option value="">اختر...</option>');
                     loadReports(1);
-                    // تأخير التنبيه قليلاً لضمان انغلاق نافذة التصميم
                     setTimeout(() => {
                         alert('تم إنشاء ونشر البلاغ بنجاح');
                     }, 300);
                 },
                 error: function (xhr) {
+                    console.error('Error creating report:', xhr);
                     let errors = xhr.responseJSON || {};
                     let errorMsg = 'حدث خطأ أثناء إنشاء البلاغ:\n';
-                    if (errors.detail) {
-                        errorMsg = errors.detail;
-                    } else if (typeof errors === 'object') {
+                    
+                    if (typeof errors === 'object') {
                         for (let key in errors) {
-                            errorMsg += `${key}: ${errors[key]}\n`;
+                            if (Array.isArray(errors[key])) {
+                                errorMsg += `${key}: ${errors[key].join(', ')}\n`;
+                            } else {
+                                errorMsg += `${key}: ${errors[key]}\n`;
+                            }
                         }
                     } else {
                         errorMsg = 'حدث خطأ غير متوقع';
                     }
+                    
                     alert(errorMsg);
-                    // إعادة تفعيل الزر في حالة الخطأ ليتمكن المستخدم من التصحيح
-                    btn.prop('disabled', false).html(originalText).removeClass('btn-secondary').addClass('btn-success');
-                },
-                complete: function() {
-                    // التأكد من استعادة حالة الزر (اختياري هنا لأن النجاح يغلق النافذة والخطأ يعيده)
+                    btn.prop('disabled', false).html(originalText);
                 }
             });
         });
@@ -927,7 +835,8 @@
             loadReports(1);
         });
 
-        // تحميل البلاغات عند بدء الصفحة
+        // تحميل أولي
+        loadGovernorates();
         loadReports();
     });
 </script>

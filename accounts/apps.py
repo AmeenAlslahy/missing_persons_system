@@ -9,4 +9,7 @@ class AccountsConfig(AppConfig):
     
     def ready(self):
         """استيراد الإشارات عند جاهزية التطبيق"""
-        import accounts.signals
+        try:
+            import accounts.signals
+        except ImportError:
+            pass

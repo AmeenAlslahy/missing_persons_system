@@ -53,9 +53,9 @@
         <div class="card stat-card h-100">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h5 class="mb-0">نشاط البلاغات مؤخراً</h5>
-                <select class="form-select form-select-sm shadow-none w-auto">
-                    <option>آخر 7 أيام</option>
-                    <option>آخر 30 يوم</option>
+                <select class="form-select form-select-sm shadow-none w-auto" id="chart-period">
+                    <option value="7">آخر 7 أيام</option>
+                    <option value="30">آخر 30 يوم</option>
                 </select>
             </div>
             <div style="height: 300px;">
@@ -78,22 +78,27 @@
         <div class="card stat-card">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h5 class="mb-0">آخر طلبات التوثيق</h5>
-                <a href="{% url 'admin_dashboard:users' %}" class="btn btn-sm btn-outline-primary shadow-none">عرض
-                    الجميع</a>
+                <a href="{% url 'admin_dashboard:users' %}" class="btn btn-sm btn-outline-primary shadow-none">
+                    <i class="fas fa-arrow-left me-1"></i> عرض الجميع
+                </a>
             </div>
             <div class="table-responsive">
                 <table class="table table-hover">
                     <thead>
                         <tr>
                             <th>المستخدم</th>
-                            <th>رقم الهوية</th>
+                            <th>رقم الهاتف</th>
                             <th>تاريخ الطلب</th>
                             <th>الحالة</th>
                             <th>الإجراء</th>
                         </tr>
                     </thead>
                     <tbody id="latest-verifications">
-                        <!-- تملأ عبر AJAX -->
+                        <tr>
+                            <td colspan="5" class="text-center py-4">
+                                <div class="spinner-border text-primary spinner-border-sm me-2"></div> جاري التحميل...
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -105,6 +110,9 @@
 {% block extra_js %}
 <script>
     $(document).ready(function () {
+        let reportsChart = null;
+        let casesChart = null;
+        
         // تحميل الإحصائيات عبر AJAX
         function loadDashboardStats() {
             $.ajax({
@@ -112,12 +120,15 @@
                 method: 'GET',
                 success: function (data) {
                     const stats = data.daily_stats || {};
+                    
                     // KPIs
                     $('#active-reports').text(stats.active_reports || 0);
                     $('#pending-review-count').text(stats.pending_review_reports || 0);
 
                     $('#smart-matches').text(stats.total_matches || 0);
-                    $('#system-accuracy').text(Math.round(stats.match_success_rate || 0));
+                    
+                    let accuracy = stats.match_success_rate || 0;
+                    $('#system-accuracy').text(Math.round(accuracy));
 
                     $('#resolved-total').text(stats.resolved_reports || 0);
                     $('#resolved-today').text(stats.resolved_today || 0);
@@ -125,118 +136,167 @@
 
                     const avgTime = stats.avg_resolution_time || 0;
                     $('#avg-resolution-time').text(avgTime.toFixed(1));
+                    
+                    // تحديث توزيع الحالات
+                    updateCasesChart(stats);
+                },
+                error: function (xhr) {
+                    console.error('Error loading dashboard stats:', xhr);
+                    $('#active-reports, #smart-matches, #resolved-total, #avg-resolution-time').text('خطأ');
                 }
             });
+        }
 
-            // تحميل طلبات التوثيق
+        // تحديث مخطط توزيع الحالات
+        function updateCasesChart(stats) {
+            const ctx = document.getElementById('casesDistribution').getContext('2d');
+            
+            if (casesChart) {
+                casesChart.destroy();
+            }
+            
+            const hasData = (stats.resolved_reports || stats.missing_reports || stats.pending_review_reports);
+            
+            casesChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['محلولة', 'مفقودة', 'قيد المراجعة'],
+                    datasets: [{
+                        data: [
+                            stats.resolved_reports || 0,
+                            stats.missing_reports || 0,
+                            stats.pending_review_reports || 0
+                        ],
+                        backgroundColor: hasData ? ['#27ae60', '#e74c3c', '#f39c12'] : ['#ecf0f1']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: { enabled: !!hasData }
+                    }
+                }
+            });
+        }
+
+        // تحميل طلبات التوثيق
+        function loadVerificationRequests() {
             $.ajax({
-                url: '/api/accounts/users/?verification_status=pending',
+                url: '/api/accounts/users/?verification_status=pending&limit=5',
                 method: 'GET',
                 success: function (response) {
+                    const users = response.results || [];
                     let html = '';
-                    if (response.results) {
-                        response.results.slice(0, 5).forEach(user => {
+                    
+                    if (users.length === 0) {
+                        html = '<tr><td colspan="5" class="text-center py-4 text-muted">لا توجد طلبات معلقة</td></tr>';
+                    } else {
+                        users.forEach(user => {
                             html += `
                             <tr>
                                 <td>
                                     <div class="d-flex align-items-center">
-                                        <div class="fw-bold">${user.full_name}</div>
+                                        <div class="fw-bold">${user.full_name || 'غير محدد'}</div>
                                     </div>
                                 </td>
-                                <td>${user.national_id || '---'}</td>
-                                <td>${new Date(user.date_joined).toLocaleDateString('ar-SA')}</td>
+                                <td>${user.phone || '---'}</td>
+                                <td>${user.date_joined ? new Date(user.date_joined).toLocaleDateString('ar-SA') : '---'}</td>
                                 <td><span class="badge bg-warning">قيد الانتظار</span></td>
                                 <td>
-                                    <button class="btn btn-sm btn-primary" onclick="window.location.href='{% url 'admin_dashboard:users' %}?id=${user.id}'">مراجعة</button>
+                                    <button class="btn btn-sm btn-primary" onclick="window.location.href='{% url 'admin_dashboard:users' %}?id=${user.id}'">
+                                        <i class="fas fa-eye me-1"></i> مراجعة
+                                    </button>
                                 </td>
                             </tr>
                         `;
                         });
                     }
-                    $('#latest-verifications').html(html || '<tr><td colspan="5" class="text-center">لا توجد طلبات معلقة</td></tr>');
+                    
+                    $('#latest-verifications').html(html);
+                },
+                error: function (xhr) {
+                    console.error('Error loading verification requests:', xhr);
+                    $('#latest-verifications').html('<tr><td colspan="5" class="text-center py-4 text-danger">حدث خطأ في تحميل الطلبات</td></tr>');
                 }
             });
         }
 
-        // رسم البياني للجداول (آخر 7 أيام)
-        $.ajax({
-            url: '/api/analytics/daily-stats/',
-            method: 'GET',
-            success: function (response) {
-                const results = response.results || [];
-                const history = results.length > 0 ? results.slice(0, 7).reverse() : [];
+        // رسم البياني للجداول
+        function loadChartData(days = 7) {
+            $.ajax({
+                url: '/api/analytics/daily-stats/',
+                method: 'GET',
+                data: { limit: days },
+                success: function (response) {
+                    const results = response.results || [];
+                    const history = results.length > 0 ? results.slice(0, days).reverse() : [];
 
-                const labels = history.length > 0 ? history.map(item => {
-                    const d = new Date(item.date);
-                    return d.toLocaleDateString('ar-SA', { weekday: 'long' });
-                }) : ['لا توجد بيانات'];
+                    const labels = history.length > 0 ? history.map(item => {
+                        const d = new Date(item.date);
+                        return d.toLocaleDateString('ar-SA', { weekday: 'short' });
+                    }) : ['لا توجد بيانات'];
 
-                const missingData = history.length > 0 ? history.map(item => item.missing_reports || 0) : [0];
-                const foundData = history.length > 0 ? history.map(item => item.found_reports || 0) : [0];
+                    const missingData = history.length > 0 ? history.map(item => item.missing_reports || 0) : [0];
+                    const foundData = history.length > 0 ? history.map(item => item.found_reports || 0) : [0];
 
-                const ctxReports = document.getElementById('reportsChart').getContext('2d');
-                new Chart(ctxReports, {
-                    type: 'line',
-                    data: {
-                        labels: labels,
-                        datasets: [{
-                            label: 'المفقودين',
-                            data: missingData,
-                            borderColor: '#3498db',
-                            tension: 0.4
-                        }, {
-                            label: 'المعثور عليهم',
-                            data: foundData,
-                            borderColor: '#27ae60',
-                            tension: 0.4
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { position: 'bottom' }
-                        }
+                    const ctx = document.getElementById('reportsChart').getContext('2d');
+                    
+                    if (reportsChart) {
+                        reportsChart.destroy();
                     }
-                });
-            }
+                    
+                    reportsChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'المفقودين',
+                                data: missingData,
+                                borderColor: '#3498db',
+                                backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                                tension: 0.4,
+                                fill: true
+                            }, {
+                                label: 'المعثور عليهم',
+                                data: foundData,
+                                borderColor: '#27ae60',
+                                backgroundColor: 'rgba(39, 174, 96, 0.1)',
+                                tension: 0.4,
+                                fill: true
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { position: 'bottom' }
+                            }
+                        }
+                    });
+                },
+                error: function (xhr) {
+                    console.error('Error loading chart data:', xhr);
+                }
+            });
+        }
+
+        // تغيير فترة المخطط
+        $('#chart-period').change(function() {
+            loadChartData($(this).val());
         });
 
-        // توزيع الحالات
-        $.ajax({
-            url: '/api/analytics/dashboard/',
-            method: 'GET',
-            success: function (response) {
-                const stats = response.daily_stats || {};
-                const ctxDist = document.getElementById('casesDistribution').getContext('2d');
-                const hasData = (stats.resolved_reports || stats.missing_reports || stats.pending_review_reports);
-
-                new Chart(ctxDist, {
-                    type: 'doughnut',
-                    data: {
-                        labels: ['محلولة', 'مفقودة', 'قيد المراجعة'],
-                        datasets: [{
-                            data: [
-                                stats.resolved_reports || 0,
-                                stats.missing_reports || 0,
-                                stats.pending_review_reports || 0
-                            ],
-                            backgroundColor: hasData ? ['#27ae60', '#e74c3c', '#f39c12'] : ['#ecf0f1']
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { position: 'bottom' },
-                            tooltip: { enabled: !!hasData }
-                        }
-                    }
-                });
-            }
-        });
-
+        // تحميل كل البيانات
         loadDashboardStats();
+        loadVerificationRequests();
+        loadChartData(7);
+        
+        // تحديث دوري كل دقيقة
+        setInterval(function() {
+            loadDashboardStats();
+            loadVerificationRequests();
+        }, 60000);
     });
 </script>
 {% endblock %}

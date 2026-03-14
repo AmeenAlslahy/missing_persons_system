@@ -67,28 +67,47 @@ class MatchResult(models.Model):
     detected_at = models.DateTimeField(_('تاريخ الاكتشاف'), auto_now_add=True)
     updated_at = models.DateTimeField(_('تاريخ التحديث'), auto_now=True)
     
+    # تحسين: إضافة حقل لعدد مرات المشاهدة
+    view_count = models.IntegerField(_('عدد المشاهدات'), default=0)
+    
     class Meta:
         verbose_name = _('نتيجة مطابقة')
-        verbose_name_plural = _('نتائج المطابقة')
+        verbose_name_plural = _('نتائج المطابقات')
         ordering = ['-similarity_score', '-detected_at']
         indexes = [
             models.Index(fields=['match_status']),
             models.Index(fields=['priority_level']),
             models.Index(fields=['detected_at']),
+            models.Index(fields=['report_1', 'report_2']),  # للبحث السريع
+            models.Index(fields=['confidence_level', 'similarity_score']),  # للتصفية
         ]
+        unique_together = ['report_1', 'report_2']  # منع التكرار
 
     def __str__(self):
         return f"مطابقة: {self.report_1.report_code} ↔ {self.report_2.report_code} ({self.similarity_score:.2f})"
     
     @property
     def missing_report(self):
-        """الحصول على بلاغ المفقود (الافتراضي أن report_1 هو المفقود)"""
+        """الحصول على بلاغ المفقود"""
         return self.report_1 if self.report_1.report_type == 'missing' else self.report_2
     
     @property
     def found_report(self):
         """الحصول على بلاغ المعثور عليه"""
         return self.report_2 if self.report_1.report_type == 'missing' else self.report_1
+    
+    @property
+    def time_difference_hours(self):
+        """الفرق الزمني بين البلاغين بالساعات"""
+        if self.report_1 and self.report_2:
+            diff = abs((self.report_2.created_at - self.report_1.created_at).total_seconds())
+            return round(diff / 3600, 1)
+        return None
+    
+    def increment_view_count(self):
+        """زيادة عدد المشاهدات"""
+        self.view_count += 1
+        self.save(update_fields=['view_count'])
 
 
 class MatchingAuditLog(models.Model):
@@ -116,6 +135,29 @@ class MatchingAuditLog(models.Model):
         verbose_name = _('سجل تدقيق مطابقة')
         verbose_name_plural = _('سجل تدقيق المطابقات')
         ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['action_type', 'timestamp']),
+            models.Index(fields=['status']),
+        ]
 
     def __str__(self):
         return f"{self.action_type} - {self.timestamp}"
+
+
+class MatchFeedback(models.Model):
+    """تقييم المستخدمين للمطابقات"""
+    match = models.ForeignKey(MatchResult, on_delete=models.CASCADE, related_name='feedback', verbose_name=_('المطابقة'))
+    user = models.ForeignKey('accounts.User', on_delete=models.CASCADE, verbose_name=_('المستخدم'))
+    is_correct = models.BooleanField(_('المطابقة صحيحة؟'), default=True)
+    rating = models.IntegerField(_('التقييم'), choices=[(i, i) for i in range(1, 6)], default=3)
+    comments = models.TextField(_('تعليقات'), blank=True)
+    created_at = models.DateTimeField(_('تاريخ التقييم'), auto_now_add=True)
+    
+    class Meta:
+        unique_together = ['match', 'user']  # كل مستخدم يمكنه تقييم مرة واحدة
+        verbose_name = _('تقييم مطابقة')
+        verbose_name_plural = _('تقييمات المطابقات')
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"تقييم {self.user} للمطابقة {self.match.match_id}: {self.rating}/5"

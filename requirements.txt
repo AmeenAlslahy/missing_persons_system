@@ -14,3 +14,6 @@ opencv-python
 tensorflow
 django-cryptography
 mediapipe
+channels==4.0.0
+daphne==4.0.0
+channels-redis==4.0.0

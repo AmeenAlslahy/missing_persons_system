@@ -104,10 +104,10 @@
     $(document).ready(function () {
         // Load Overall Stats (Trust, Demographics, etc.)
         $.get('/api/analytics/stats/', function (res) {
-            $('#stat-total-reports').text(res.system.total_reports);
-            $('#stat-active-reports').text(res.system.active_reports);
-            $('#stat-total-matches').text(res.system.total_matches);
-            $('#stat-total-users').text(res.system.total_users);
+            $('#stat-total-reports').text(res.system?.total_reports || 0);
+            $('#stat-active-reports').text(res.system?.active_reports || 0);
+            $('#stat-total-matches').text(res.system?.total_matches || 0);
+            $('#stat-total-users').text(res.system?.total_users || 0);
 
             // Trust Chart
             if (res.user_trust) {
@@ -117,7 +117,7 @@
                         labels: ['ممتازة (90%+)', 'عالية (70-90)', 'متوسطة (40-70)', 'منخفضة (0-40)'],
                         datasets: [{
                             label: 'عدد المستخدمين',
-                            data: [res.user_trust.very_high, res.user_trust.high, res.user_trust.medium, res.user_trust.low],
+                            data: [res.user_trust.very_high || 0, res.user_trust.high || 0, res.user_trust.medium || 0, res.user_trust.low || 0],
                             backgroundColor: ['#2ecc71', '#3498db', '#f1c40f', '#e74c3c']
                         }]
                     },
@@ -127,14 +127,22 @@
 
             // Gender Chart
             if (res.demographics && res.demographics.gender) {
-                const genderLabels = { 'male': 'ذكر', 'female': 'أنثى', 'other': 'غير محدد' };
+                const genderLabels = { 'M': 'ذكر', 'F': 'أنثى', 'unknown': 'غير محدد' };
+                const genderData = [];
+                const genderColors = [];
+                
+                Object.keys(res.demographics.gender).forEach(key => {
+                    genderData.push(res.demographics.gender[key]);
+                    genderColors.push(key === 'M' ? '#3498db' : (key === 'F' ? '#e84393' : '#95a5a6'));
+                });
+                
                 new Chart(document.getElementById('genderChart'), {
                     type: 'pie',
                     data: {
                         labels: Object.keys(res.demographics.gender).map(k => genderLabels[k] || k),
                         datasets: [{
-                            data: Object.values(res.demographics.gender),
-                            backgroundColor: ['#3498db', '#e84393', '#95a5a6']
+                            data: genderData,
+                            backgroundColor: genderColors
                         }]
                     },
                     options: { responsive: true, maintainAspectRatio: false }
@@ -143,23 +151,31 @@
 
             // Health Chart
             if (res.demographics && res.demographics.health_condition) {
+                const healthKeys = Object.keys(res.demographics.health_condition);
+                const healthValues = Object.values(res.demographics.health_condition);
+                
                 new Chart(document.getElementById('healthChart'), {
                     type: 'doughnut',
                     data: {
-                        labels: Object.keys(res.demographics.health_condition),
+                        labels: healthKeys.length ? healthKeys : ['لا توجد بيانات'],
                         datasets: [{
-                            data: Object.values(res.demographics.health_condition),
-                            backgroundColor: ['#e67e22', '#16a085', '#2980b9', '#8e44ad', '#2c3e50']
+                            data: healthKeys.length ? healthValues : [1],
+                            backgroundColor: healthKeys.length ? ['#e67e22', '#16a085', '#2980b9', '#8e44ad', '#2c3e50'] : ['#ecf0f1']
                         }]
                     },
                     options: { responsive: true, maintainAspectRatio: false }
                 });
             }
+        }).fail(function(xhr) {
+            console.error('Error loading analytics stats:', xhr);
+            $('#stat-total-reports, #stat-active-reports, #stat-total-matches, #stat-total-users').text('خطأ');
         });
 
-        // Load Daily Stats & Charts
+        // Load Dashboard Stats for geographical data
         $.get('/api/analytics/dashboard/', function (response) {
             const stats = response.daily_stats || {};
+            
+            // Geo Chart (Top Cities)
             if (stats.top_cities && stats.top_cities.length > 0) {
                 new Chart(document.getElementById('geoChart'), {
                     type: 'bar',
@@ -173,32 +189,46 @@
                     },
                     options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y' }
                 });
+            } else {
+                document.getElementById('geoChart').innerHTML = '<p class="text-center text-muted mt-5">لا توجد بيانات كافية للمناطق الجغرافية</p>';
             }
 
+            // Age Distribution Chart
             if (stats.reports_by_age_group) {
                 const ageLabels = { 'children': 'أطفال', 'teens': 'يافعين', 'young_adults': 'شباب', 'adults': 'بالغين', 'seniors': 'كبار سن' };
+                const ageKeys = Object.keys(stats.reports_by_age_group);
+                const ageValues = Object.values(stats.reports_by_age_group);
+                
                 new Chart(document.getElementById('ageDistributionChart'), {
                     type: 'bar',
                     data: {
-                        labels: Object.keys(stats.reports_by_age_group).map(key => ageLabels[key] || key),
+                        labels: ageKeys.map(key => ageLabels[key] || key),
                         datasets: [{
                             label: 'توزيع الأعمار',
-                            data: Object.values(stats.reports_by_age_group),
+                            data: ageValues,
                             backgroundColor: '#27ae60'
                         }]
                     },
                     options: { responsive: true, maintainAspectRatio: false }
                 });
             }
+        }).fail(function(xhr) {
+            console.error('Error loading dashboard data:', xhr);
         });
 
+        // Load Daily Stats for response rate chart
         $.get('/api/analytics/daily-stats/', function (response) {
-            if (response.results && response.results.length > 0) {
-                const history = response.results.slice(0, 15).reverse();
+            const results = response.results || [];
+            if (results.length > 0) {
+                const history = results.slice(0, 15).reverse();
+                
                 new Chart(document.getElementById('responseRateChart'), {
                     type: 'line',
                     data: {
-                        labels: history.map(item => item.date),
+                        labels: history.map(item => {
+                            const d = new Date(item.date);
+                            return d.toLocaleDateString('ar-SA', { month: 'short', day: 'numeric' });
+                        }),
                         datasets: [{
                             label: 'معدل نجاح المطابقة (%)',
                             data: history.map(item => item.match_success_rate || 0),
@@ -210,7 +240,11 @@
                     },
                     options: { responsive: true, maintainAspectRatio: false }
                 });
+            } else {
+                document.getElementById('responseRateChart').innerHTML = '<p class="text-center text-muted mt-5">لا توجد بيانات كافية للمخطط</p>';
             }
+        }).fail(function(xhr) {
+            console.error('Error loading daily stats:', xhr);
         });
     });
 </script>

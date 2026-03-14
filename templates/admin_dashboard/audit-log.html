@@ -17,21 +17,26 @@
     <div class="card-body">
         <form id="audit-filter" class="row g-3">
             <div class="col-md-5">
-                <input type="text" name="search" class="form-control"
+                <input type="text" name="search" class="form-control" id="search-input"
                     placeholder="بحث في التفاصيل، المستخدم، الآي بي...">
             </div>
             <div class="col-md-3">
-                <select name="action_type" class="form-select">
+                <select name="action" class="form-select" id="action-select">
                     <option value="">كل أنواع العمليات</option>
                     <option value="LOGIN">دخول</option>
-                    <option value="REGISTER">تسجيل</option>
-                    <option value="ADMIN_BLOCK">حظر مشرف</option>
-                    <option value="REVIEW_ACCEPT">قبول بلاغ</option>
-                    <option value="REVIEW_REJECT">رفض بلاغ</option>
+                    <option value="CREATE">إضافة</option>
+                    <option value="UPDATE">تعديل</option>
+                    <option value="DELETE">حذف</option>
+                    <option value="REVIEW">مراجعة بلاغ</option>
                 </select>
             </div>
             <div class="col-md-2">
-                <button type="submit" class="btn btn-primary w-100">بحث</button>
+                <button type="submit" class="btn btn-primary w-100"><i class="fas fa-search"></i> بحث</button>
+            </div>
+            <div class="col-md-2">
+                <button type="button" class="btn btn-outline-secondary w-100" id="refresh-btn">
+                    <i class="fas fa-sync-alt"></i> تحديث
+                </button>
             </div>
         </form>
     </div>
@@ -50,12 +55,18 @@
                 </tr>
             </thead>
             <tbody id="audit-table-body">
-                <!-- Data via AJAX -->
+                <tr>
+                    <td colspan="5" class="text-center py-4">
+                        <div class="spinner-border text-primary spinner-border-sm me-2"></div> جاري التحميل...
+                    </td>
+                </tr>
             </tbody>
         </table>
     </div>
-    <div class="card-footer bg-white border-0 text-center">
-        <button id="load-more-btn" class="btn btn-sm btn-outline-secondary px-4">تحميل المزيد</button>
+    <div class="card-footer bg-white border-0 text-center" id="pagination-footer">
+        <button id="load-more-btn" class="btn btn-sm btn-outline-secondary px-4" style="display: none;">
+            <i class="fas fa-chevron-down me-1"></i> تحميل المزيد
+        </button>
     </div>
 </div>
 {% endblock %}
@@ -63,39 +74,133 @@
 {% block extra_js %}
 <script>
     $(document).ready(function () {
-        let nextPage = 1;
+        let currentPage = 1;
+        let isLoading = false;
+        let hasMore = true;
+        let currentParams = {};
 
         function loadLogs(page = 1, append = false) {
-            let formData = $('#audit-filter').serialize();
+            if (isLoading) return;
+            
+            isLoading = true;
+            
+            // جمع معاملات البحث
+            let params = {
+                page: page,
+                search: $('#search-input').val(),
+                action: $('#action-select').val()
+            };
+            
+            // إزالة الفارغة
+            Object.keys(params).forEach(key => {
+                if (!params[key]) delete params[key];
+            });
+            
+            currentParams = params;
+            
             $.ajax({
-                url: `/api/accounts/audit-logs/?page=${page}&${formData}`,
+                url: '/api/audit/logs/',
                 method: 'GET',
+                data: params,
                 success: function (response) {
                     renderLogs(response.results, append);
-                    nextPage = response.next ? page + 1 : null;
-                    if (!nextPage) $('#load-more-btn').hide(); else $('#load-more-btn').show();
+                    
+                    // تحديث معلومات التصفح
+                    hasMore = !!response.next;
+                    currentPage = page;
+                    
+                    if (hasMore) {
+                        $('#load-more-btn').show();
+                    } else {
+                        $('#load-more-btn').hide();
+                    }
+                    
+                    isLoading = false;
+                },
+                error: function (xhr) {
+                    console.error('Error loading audit logs:', xhr);
+                    let errorHtml = '<tr><td colspan="5" class="text-center py-4 text-danger">';
+                    errorHtml += '<i class="fas fa-exclamation-triangle me-2"></i> حدث خطأ في تحميل السجلات';
+                    errorHtml += '</td></tr>';
+                    $('#audit-table-body').html(errorHtml);
+                    $('#load-more-btn').hide();
+                    isLoading = false;
                 }
             });
         }
 
         function renderLogs(logs, append) {
+            if (!logs || logs.length === 0) {
+                if (!append) {
+                    $('#audit-table-body').html('<tr><td colspan="5" class="text-center py-4 text-muted">لا توجد سجلات</td></tr>');
+                }
+                return;
+            }
+
             let html = '';
             logs.forEach(log => {
+                // تنسيق الوقت
+                let timeStr = '';
+                if (log.created_at) {
+                    const date = new Date(log.created_at);
+                    timeStr = date.toLocaleDateString('ar-SA') + ' ' + 
+                              date.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+                }
+                
+                // تحديد لون العملية
+                let actionBadge = '';
+                switch (log.action_type) {
+                    case 'LOGIN':
+                        actionBadge = '<span class="badge bg-info">دخول</span>';
+                        break;
+                    case 'CREATE':
+                        actionBadge = '<span class="badge bg-success">إضافة</span>';
+                        break;
+                    case 'UPDATE':
+                        actionBadge = '<span class="badge bg-warning">تعديل</span>';
+                        break;
+                    case 'DELETE':
+                        actionBadge = '<span class="badge bg-danger">حذف</span>';
+                        break;
+                    case 'REVIEW':
+                        actionBadge = '<span class="badge bg-primary">مراجعة</span>';
+                        break;
+                    default:
+                        actionBadge = `<span class="badge bg-secondary">${log.action_type || 'غير محدد'}</span>`;
+                }
+
                 html += `
                 <tr>
-                    <td class="text-nowrap">${new Date(log.created_at).toLocaleString('ar-SA')}</td>
-                    <td><strong>${log.user_full_name || '---'}</strong><br><small class="text-muted">${log.user || ''}</small></td>
-                    <td><span class="badge bg-secondary font-monospace">${log.action_type}</span></td>
-                    <td>${log.action_details}</td>
-                    <td><small>${log.ip_address}<br>${log.user_agent ? log.user_agent.substring(0, 30) + '...' : ''}</small></td>
+                    <td class="text-nowrap small">${timeStr || '---'}</td>
+                    <td>
+                        <strong>${log.user_full_name || 'النظام'}</strong>
+                        ${log.user ? `<br><small class="text-muted">${log.user}</small>` : ''}
+                    </td>
+                    <td>${actionBadge}</td>
+                    <td>
+                        <div class="text-wrap" style="max-width: 300px;">${log.action_details || '---'}</div>
+                    </td>
+                    <td>
+                        <small class="text-nowrap">
+                            ${log.ip_address || '---'}<br>
+                            ${log.user_agent ? log.user_agent.substring(0, 30) + '...' : ''}
+                        </small>
+                    </td>
                 </tr>
             `;
             });
-            if (append) $('#audit-table-body').append(html); else $('#audit-table-body').html(html || '<tr><td colspan="5" class="text-center">لا توجد سجلات</td></tr>');
+
+            if (append) {
+                $('#audit-table-body').append(html);
+            } else {
+                $('#audit-table-body').html(html);
+            }
         }
 
         $('#load-more-btn').click(function () {
-            if (nextPage) loadLogs(nextPage, true);
+            if (hasMore && !isLoading) {
+                loadLogs(currentPage + 1, true);
+            }
         });
 
         $('#audit-filter').submit(function (e) {
@@ -103,7 +208,19 @@
             loadLogs(1, false);
         });
 
+        $('#refresh-btn').click(function () {
+            loadLogs(1, false);
+        });
+
+        // تحميل أولي
         loadLogs();
+        
+        // تحديث دوري كل 30 ثانية
+        setInterval(function() {
+            if (!isLoading && window.location.pathname.includes('/audit-log/')) {
+                loadLogs(1, false);
+            }
+        }, 30000);
     });
 </script>
 {% endblock %}

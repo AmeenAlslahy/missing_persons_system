@@ -1,0 +1,22 @@
+{
+  "users": [
+    {
+      "id": "1",
+      "phone": "713555262"
+    }
+  ],
+  "reports": [
+    {
+      "report_id": "35b7e25f-1d98-4a1d-a677-798eca50a4f5",
+      "contact_phone": "777888999"
+    },
+    {
+      "report_id": "16f872b0-830d-4ce3-ae24-86da01ab04e8",
+      "contact_phone": "711234567"
+    },
+    {
+      "report_id": "b29ab839-909a-45d5-a61a-2ead5df75e27",
+      "contact_phone": "713555262"
+    }
+  ]
+}

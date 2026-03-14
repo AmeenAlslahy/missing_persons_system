@@ -1,24 +1,25 @@
-from rest_framework import generics, viewsets, status, filters
+from rest_framework import viewsets, status, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.decorators import action
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Count, Avg, F, ExpressionWrapper, fields
+from django.db.models import Q, Count, Avg, Case, When, IntegerField, F
 from django.db.models.functions import ExtractYear
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
-from datetime import date, timedelta
+from datetime import date
 import logging
 
-from .models import Report, ReportImage, Person
+from .models import Report, Person
 from .serializers import (
-    ReportSerializer, ReportReviewSerializer, ReportCloseSerializer,
-    ReportStatisticsSerializer, ReportSearchSerializer,
-    ReportImageSerializer, PersonSearchSerializer, 
-    ReportFromExistingPersonSerializer, get_client_ip
+    ReportPublicSerializer, ReportAdminSerializer, ReportCreateSerializer,
+    ReportReviewSerializer, ReportCloseSerializer, ReportStatisticsSerializer,
+    ReportSearchSerializer, PersonSearchSerializer, 
+    ReportFromExistingPersonSerializer
 )
-from accounts.permissions import IsVerifiedUser
+from .permissions import IsOwnerOrReadOnly, IsVerifiedUser
+from .utils import apply_age_filter, obfuscate_phone
 from audit.services import AuditService
 
 logger = logging.getLogger(__name__)
@@ -28,30 +29,40 @@ class ReportViewSet(viewsets.ModelViewSet):
     """ViewSet للبلاغات"""
     queryset = Report.objects.select_related(
         'person', 'user', 
-        'lost_governorate', 'lost_district', 'lost_uzlah'
+        'lost_governorate', 'lost_district'
     ).prefetch_related(
         'images'
     ).all()
     
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['report_type', 'status', 'lost_governorate', 'importance']
-    search_fields = ['person__first_name', 'person__last_name', 'report_code', 'contact_phone']
+    search_fields = ['person__first_name', 'person__last_name', 'report_code']
     ordering_fields = ['created_at', 'last_seen_date']
     ordering = ['-created_at']
     
     def get_serializer_class(self):
-        """اختيار السرياليزر المناسب"""
-        if self.request.user.is_staff:
-            return ReportSerializer
-        return ReportSerializer
+        """اختيار السرياليزر المناسب حسب الصلاحية"""
+        if self.action == 'create':
+            return ReportCreateSerializer
+        
+        if self.request.user and self.request.user.is_staff:
+            return ReportAdminSerializer
+        
+        return ReportPublicSerializer
     
     def get_permissions(self):
-        """تحديد الصلاحيات"""
+        """تحديد الصلاحيات لكل action"""
         if self.action in ['list', 'retrieve']:
-            permission_classes = []  # يسمح للجميع بالمشاهدة
+            permission_classes = [AllowAny]
         elif self.action == 'create':
             permission_classes = [IsAuthenticated, IsVerifiedUser]
         elif self.action in ['update', 'partial_update', 'destroy']:
+            permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
+        elif self.action in ['review', 'escalate']:
+            permission_classes = [IsAdminUser]
+        elif self.action == 'resolve':
+            permission_classes = [IsAuthenticated]
+        elif self.action == 'matches':
             permission_classes = [IsAuthenticated]
         else:
             permission_classes = [IsAdminUser]
@@ -64,66 +75,50 @@ class ReportViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         # تصفية حسب الصلاحيات
-        if user.is_authenticated:
+        if user and user.is_authenticated:
             if user.is_staff:
                 # المشرف يرى كل البلاغات
                 pass
             else:
-                # المستخدم العادي يرى بلاغاته والبلاغات النشطة
+                # المستخدم العادي يرى بلاغاته والبلاغات النشطة والمحلولة فقط
                 queryset = queryset.filter(
-                    Q(user=user) | Q(status='active')
+                    Q(user=user) | Q(status__in=['active', 'resolved'])
                 )
         else:
-            # المستخدم غير المصادق يرى فقط البلاغات النشطة
-            queryset = queryset.filter(status='active')
+            # المستخدم غير المصادق يرى فقط البلاغات النشطة والمحلولة
+            queryset = queryset.filter(status__in=['active', 'resolved'])
+
+        # الافتراضي للمستخدم العادي هو البلاغات النشطة إلا إذا طلب المحلولة
+        if not user.is_staff:
+            status_param = self.request.query_params.get('status')
+            if not status_param:
+                queryset = queryset.filter(status='active')
 
         # تطبيق الفلاتر من query params
         report_type = self.request.query_params.get('report_type')
-        if report_type:
+        if report_type and report_type in dict(Report.REPORT_TYPES):
             queryset = queryset.filter(report_type=report_type)
 
         gender = self.request.query_params.get('gender')
-        if gender:
+        if gender and gender in dict(Person.GENDER_CHOICES):
             queryset = queryset.filter(person__gender=gender)
 
-        # ✅ تعديل فلتر العمر - استخدام date_of_birth
+        # تطبيق فلتر العمر باستخدام الدالة المساعدة
         min_age = self.request.query_params.get('min_age')
-        if min_age:
-            today = date.today()
-            # حساب تاريخ الميلاد الذي يحقق العمر الأدنى
-            # الشخص الذي عمره >= min_age يعني تاريخ ميلاده <= (today - min_age years)
-            min_birth_date = date(today.year - int(min_age), today.month, today.day)
-            queryset = queryset.filter(person__date_of_birth__lte=min_birth_date)
-
         max_age = self.request.query_params.get('max_age')
-        if max_age:
-            today = date.today()
-            # الشخص الذي عمره <= max_age يعني تاريخ ميلاده >= (today - max_age years)
-            max_birth_date = date(today.year - int(max_age), today.month, today.day)
-            queryset = queryset.filter(person__date_of_birth__gte=max_birth_date)
+        queryset = apply_age_filter(queryset, min_age, max_age)
 
         status_filter = self.request.query_params.get('status')
-        if status_filter:
+        if status_filter and status_filter in dict(Report.STATUS_CHOICES):
             queryset = queryset.filter(status=status_filter)
 
-        # ✅ فلتر المحافظة
         governorate = self.request.query_params.get('governorate')
-        if governorate:
-            queryset = queryset.filter(lost_governorate_id=governorate)
+        if governorate and governorate.isdigit():
+            queryset = queryset.filter(lost_governorate_id=int(governorate))
 
-        # ✅ فلتر المديرية
         district = self.request.query_params.get('district')
-        if district:
-            queryset = queryset.filter(lost_district_id=district)
-
-        search = self.request.query_params.get('search')
-        if search:
-            queryset = queryset.filter(
-                Q(person__first_name__icontains=search) |
-                Q(person__last_name__icontains=search) |
-                Q(report_code__icontains=search) |
-                Q(contact_phone__icontains=search)
-            )
+        if district and district.isdigit():
+            queryset = queryset.filter(lost_district_id=int(district))
 
         return queryset
 
@@ -131,30 +126,37 @@ class ReportViewSet(viewsets.ModelViewSet):
         """إنشاء بلاغ جديد"""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        
-        report = serializer.instance
+        report = serializer.save()
         
         # تسجيل العملية
         AuditService.log_action(
             user=request.user,
             action='CREATE',
             resource_type='Report',
-            resource_id=report.id,
-            data_after=serializer.data,
+            resource_id=str(report.report_id),
+            data_after={'report_code': report.report_code},
             request=request
         )
         
         logger.info(f"New report created: {report.report_code} by user {request.user}")
         
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        # إرجاع البيانات حسب صلاحية المستخدم
+        if request.user.is_staff:
+            response_serializer = ReportAdminSerializer(report, context={'request': request})
+        else:
+            response_serializer = ReportPublicSerializer(report, context={'request': request})
+        
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
-        """إنشاء بلاغ جديد مع إضافة المستخدم"""
-        serializer.save(user=self.request.user)
+        """إنشاء بلاغ جديد مع إضافة المستخدم وتحديد الحالة"""
+        status = 'pending'
+        if self.request.user.is_staff:
+            status = 'active'
+        serializer.save(user=self.request.user, status=status)
     
-    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    @action(detail=True, methods=['post'])
     def review(self, request, pk=None):
         """مراجعة البلاغ من قبل المشرف"""
         try:
@@ -180,8 +182,8 @@ class ReportViewSet(viewsets.ModelViewSet):
                 user=request.user,
                 action='REVIEW',
                 resource_type='Report',
-                resource_id=report.id,
-                data_after={'status': report.status, 'notes': notes, 'rejection_reason': rejection_reason},
+                resource_id=str(report.report_id),
+                data_after={'status': report.status, 'notes': notes},
                 request=request
             )
             
@@ -189,19 +191,19 @@ class ReportViewSet(viewsets.ModelViewSet):
 
             return Response({
                 'message': message,
-                'report': ReportSerializer(report, context={'request': request}).data
+                'status': report.status
             })
             
         except Exception as e:
             logger.error(f"Error in review action for report {pk}: {str(e)}")
             return Response(
-                {'error': _('حدث خطأ أثناء تنفيذ الإجراء')},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {'error': _('حدث خطأ أثناء مراجعة البلاغ')},
+                status=status.HTTP_400_BAD_REQUEST
             )
     
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=['post'])
     def resolve(self, request, pk=None):
-        """حل البلاغ وإغلاقه مع ذكر السبب"""
+        """حل البلاغ وإغلاقه"""
         report = self.get_object()
         
         if report.user != request.user and not request.user.is_staff:
@@ -215,15 +217,16 @@ class ReportViewSet(viewsets.ModelViewSet):
         
         report.status = 'resolved'
         report.resolved_at = timezone.now()
+        report.close_reason = serializer.validated_data.get('close_reason', '')
         report.save()
         
         # تسجيل العملية
         AuditService.log_action(
             user=request.user,
-            action='STATUS_CHANGE',
+            action='RESOLVE',
             resource_type='Report',
-            resource_id=report.id,
-            data_after={'status': 'resolved', 'resolved_at': str(report.resolved_at)},
+            resource_id=str(report.report_id),
+            data_after={'status': 'resolved'},
             request=request
         )
         
@@ -231,46 +234,50 @@ class ReportViewSet(viewsets.ModelViewSet):
         
         return Response({
             'message': _('تم حل البلاغ بنجاح'),
-            'report': ReportSerializer(report, context={'request': request}).data
+            'status': report.status
         })
 
     @action(detail=True, methods=['get'])
     def matches(self, request, pk=None):
-        """عرض جميع المطابقات المرتبطة بهذا البلاغ"""
-        report = self.get_object()
+        """عرض المطابقات المرتبطة بهذا البلاغ"""
+        try:
+            from matching.models import MatchResult
+            from matching.serializers import MatchResultSerializer
+        except ImportError:
+            return Response(
+                {'error': _('خدمة المطابقة غير متوفرة')},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
         
-        from matching.models import MatchResult
-        from matching.serializers import MatchResultSerializer
+        report = self.get_object()
         
         matches = MatchResult.objects.filter(
             Q(report_1=report) | Q(report_2=report)
         ).select_related(
-            'report_1__person', 'report_2__person',
-            'report_1__lost_governorate', 'report_2__lost_governorate'
+            'report_1__person', 'report_2__person'
         ).order_by('-similarity_score')
         
+        # استخدام pagination
         page = self.paginate_queryset(matches)
         if page is not None:
             serializer = MatchResultSerializer(page, many=True, context={'request': request})
             return self.get_paginated_response(serializer.data)
         
-        serializer = MatchResultSerializer(matches, many=True, context={'request': request})
+        serializer = MatchResultSerializer(matches[:20], many=True, context={'request': request})
         return Response(serializer.data)
 
-    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    @action(detail=True, methods=['post'])
     def escalate(self, request, pk=None):
         """تصعيد البلاغ لأولوية قصوى"""
         report = self.get_object()
         report.importance = 'high'
         report.save()
         
-        # تسجيل العملية
         AuditService.log_action(
             user=request.user,
-            action='UPDATE',
+            action='ESCALATE',
             resource_type='Report',
-            resource_id=report.id,
-            data_after={'importance': 'high'},
+            resource_id=str(report.report_id),
             request=request
         )
         
@@ -290,60 +297,49 @@ class ReportViewSet(viewsets.ModelViewSet):
         data = serializer.validated_data
         queryset = self.get_queryset()
         
-        query_filters = Q()
-        
         if data.get('query'):
-            query_filters &= Q(
+            queryset = queryset.filter(
                 Q(person__first_name__icontains=data['query']) |
                 Q(person__last_name__icontains=data['query']) |
                 Q(report_code__icontains=data['query'])
             )
         
         if data.get('report_type'):
-            query_filters &= Q(report_type=data['report_type'])
-        
-        # ✅ تعديل فلتر المدينة - استخدام lost_governorate
-        if data.get('governorate') or data.get('city'):
-            city_value = data.get('governorate') or data.get('city')
-            query_filters &= Q(lost_governorate__name_ar__icontains=city_value) | \
-                             Q(lost_governorate__name_en__icontains=city_value)
+            queryset = queryset.filter(report_type=data['report_type'])
         
         if data.get('governorate_id'):
-            query_filters &= Q(lost_governorate_id=data['governorate_id'])
+            queryset = queryset.filter(lost_governorate_id=data['governorate_id'])
         
         if data.get('gender'):
-            query_filters &= Q(person__gender=data['gender'])
+            queryset = queryset.filter(person__gender=data['gender'])
         
-        # ✅ تعديل فلتر العمر
-        if data.get('min_age'):
-            today = date.today()
-            min_birth_date = date(today.year - int(data['min_age']), today.month, today.day)
-            query_filters &= Q(person__date_of_birth__lte=min_birth_date)
-        
-        if data.get('max_age'):
-            today = date.today()
-            max_birth_date = date(today.year - int(data['max_age']), today.month, today.day)
-            query_filters &= Q(person__date_of_birth__gte=max_birth_date)
+        # استخدام الدالة المساعدة للعمر
+        queryset = apply_age_filter(
+            queryset, 
+            data.get('min_age'), 
+            data.get('max_age')
+        )
         
         if data.get('start_date'):
-            query_filters &= Q(last_seen_date__gte=data['start_date'])
+            queryset = queryset.filter(last_seen_date__gte=data['start_date'])
         
         if data.get('end_date'):
-            query_filters &= Q(last_seen_date__lte=data['end_date'])
+            queryset = queryset.filter(last_seen_date__lte=data['end_date'])
         
-        queryset = queryset.filter(query_filters)
+        # ترتيب النتائج
+        queryset = queryset.order_by('-created_at')
         
         page = self.paginate_queryset(queryset)
         if page is not None:
-            serializer = ReportSerializer(page, many=True, context={'request': request})
+            serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         
-        serializer = ReportSerializer(queryset, many=True, context={'request': request})
+        serializer = self.get_serializer(queryset[:100], many=True)
         return Response(serializer.data)
 
 
 class ReportStatisticsView(APIView):
-    """إحصائيات البلاغات"""
+    """إحصائيات البلاغات - محسن باستخدام aggregate"""
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
@@ -351,55 +347,76 @@ class ReportStatisticsView(APIView):
         stats = {}
         
         if user.is_staff:
-            # إحصائيات للمشرفين
+            # استعلام واحد محسن للمشرفين
+            from django.db.models import Count, Q, Avg, F, FloatField
+            from django.db.models.functions import ExtractYear, Cast
+            
+            base_queryset = Report.objects
+            
+            # إحصائيات أساسية باستخدام aggregate
+            basic_stats = base_queryset.aggregate(
+                total_reports=Count('report_id'),
+                missing_reports=Count('report_id', filter=Q(report_type='missing')),
+                found_reports=Count('report_id', filter=Q(report_type='found')),
+                active_reports=Count('report_id', filter=Q(status='active')),
+                pending_review=Count('report_id', filter=Q(status='pending')),
+                resolved_reports=Count('report_id', filter=Q(status='resolved')),
+            )
+            
+            # إحصائيات حسب المحافظة
+            by_governorate = list(
+                base_queryset.values('lost_governorate__name_ar')
+                .annotate(count=Count('report_id'))
+                .filter(lost_governorate__name_ar__isnull=False)
+                .order_by('-count')[:10]
+            )
+            
+            # إحصائيات حسب الحالة
+            by_status = list(
+                base_queryset.values('status')
+                .annotate(count=Count('report_id'))
+                .order_by()
+            )
+            
+            # إحصائيات حسب الجنس
+            by_gender = list(
+                base_queryset.values('person__gender')
+                .annotate(count=Count('report_id'))
+                .filter(person__gender__isnull=False)
+                .order_by()
+            )
+            
+            # متوسط العمر - حساب أكثر دقة
+            avg_age_result = base_queryset.filter(
+                person__date_of_birth__isnull=False,
+                last_seen_date__isnull=False
+            ).annotate(
+                age_at_loss=ExtractYear('last_seen_date') - ExtractYear('person__date_of_birth')
+            ).aggregate(
+                avg_age=Avg('age_at_loss')
+            )
+            
             stats = {
-                'total_reports': Report.objects.count(),
-                'missing_reports': Report.objects.filter(report_type='missing').count(),
-                'found_reports': Report.objects.filter(report_type='found').count(),
-                'active_reports': Report.objects.filter(status='active').count(),
-                'pending_review': Report.objects.filter(status='pending').count(),
-                'resolved_reports': Report.objects.filter(status='resolved').count(),
-                
-                # ✅ تغيير from by_city to by_governorate
-                'by_governorate': list(
-                    Report.objects.values('lost_governorate__name_ar')
-                    .annotate(count=Count('report_id'))
-                    .order_by('-count')[:10]
-                ),
-                
-                'status_breakdown': {
-                    item['status']: item['count'] 
-                    for item in Report.objects.values('status').annotate(count=Count('report_id')).order_by()
-                },
-
-                'by_status': list(
-                    Report.objects.values('status')
-                    .annotate(count=Count('report_id')).order_by()
-                ),
-                
-                # ✅ إضافة إحصائيات جديدة
-                'by_gender': list(
-                    Report.objects.values('person__gender')
-                    .annotate(count=Count('report_id')).order_by()
-                ),
-                
-                'avg_age_at_loss': Report.objects.annotate(
-                    calc_age=ExtractYear('last_seen_date') - ExtractYear('person__date_of_birth')
-                ).aggregate(avg=Avg('calc_age'))['avg'] or 0,
+                **basic_stats,
+                'by_governorate': by_governorate,
+                'by_status': by_status,
+                'by_gender': by_gender,
+                'avg_age_at_loss': avg_age_result['avg_age'] or 0,
             }
+            
         else:
             # إحصائيات للمستخدم العادي
+            user_reports = Report.objects.filter(user=user)
+            
             stats = {
-                'total_reports': Report.objects.filter(user=user).count(),
-                'active_reports': Report.objects.filter(status='active').count(),
-                'my_reports': Report.objects.filter(user=user).count(),
-                'my_active_reports': Report.objects.filter(user=user, status='active').count(),
-                'my_resolved_reports': Report.objects.filter(user=user, status='resolved').count(),
+                'my_reports': user_reports.count(),
+                'my_active_reports': user_reports.filter(status='active').count(),
+                'my_resolved_reports': user_reports.filter(status='resolved').count(),
                 'total_active_reports': Report.objects.filter(status='active').count(),
                 'status_breakdown': {
                     'active': Report.objects.filter(status='active').count(),
-                    'pending': Report.objects.filter(user=user, status='pending').count(),
-                    'resolved': Report.objects.filter(user=user, status='resolved').count(),
+                    'pending': user_reports.filter(status='pending').count(),
+                    'resolved': user_reports.filter(status='resolved').count(),
                 }
             }
         
@@ -417,20 +434,20 @@ class SearchPersonsView(APIView):
         if len(query) < 2:
             return Response({'results': []})
         
-        # بحث ذكي بالاسم
+        # بحث بالاسم مع ترتيب حسب الصلة
         persons = Person.objects.filter(
             Q(first_name__icontains=query) |
             Q(middle_name__icontains=query) |
             Q(last_name__icontains=query)
         ).prefetch_related('reports', 'reports__images')[:20]
         
-        # ترتيب حسب درجة التشابه البسيطة
-        results = []
-        for person in persons:
-            data = PersonSearchSerializer(person, context={'request': request}).data
-            results.append(data)
+        serializer = PersonSearchSerializer(
+            persons, 
+            many=True, 
+            context={'request': request}
+        )
             
-        return Response({'results': results})
+        return Response({'results': serializer.data})
 
 
 class CreateReportFromPersonView(APIView):
@@ -443,7 +460,7 @@ class CreateReportFromPersonView(APIView):
         except Person.DoesNotExist:
             return Response(
                 {'error': _('الشخص غير موجود')},
-                status=status.HTTP_404_NOT_NOT_FOUND
+                status=status.HTTP_404_NOT_FOUND  # ✅ تم تصحيح الخطأ
             )
         
         serializer = ReportFromExistingPersonSerializer(
@@ -459,28 +476,24 @@ class CreateReportFromPersonView(APIView):
                 user=request.user,
                 action='CREATE',
                 resource_type='Report',
-                resource_id=report.id,
-                data_after=ReportSerializer(report, context={'request': request}).data,
+                resource_id=str(report.report_id),
                 request=request
             )
             
-            # تشغيل المطابقة التلقائية
+            # تشغيل المطابقة التلقائية (غير متزامن)
             try:
-                from matching.matcher import ReportMatcher
-                matcher = ReportMatcher()
-                matches_count = matcher.run_matching_for_report(report)
+                from matching.tasks import run_matching_for_report
+                run_matching_for_report.delay(str(report.report_id))
+                matches_count = _("سيتم تشغيل المطابقة قريباً")
             except Exception as e:
-                logger.error(f"Error running matching for report {report.report_code}: {e}")
+                logger.error(f"Error scheduling matching for report {report.report_code}: {e}")
                 matches_count = 0
             
-            # تحديث الإحصائيات
-            try:
-                from analytics.services import AnalyticsService
-                AnalyticsService().update_report_stats(report, created=True)
-            except Exception as e:
-                logger.error(f"Error updating analytics for report {report.report_code}: {e}")
-            
-            response_data = ReportSerializer(report, context={'request': request}).data
+            response_serializer = ReportPublicSerializer(
+                report, 
+                context={'request': request}
+            )
+            response_data = response_serializer.data
             response_data['matches_found'] = matches_count
             
             return Response(response_data, status=status.HTTP_201_CREATED)

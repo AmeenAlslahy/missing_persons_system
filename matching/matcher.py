@@ -6,9 +6,11 @@ from datetime import timedelta, date
 import logging
 import re
 import jellyfish
+from django.core.cache import cache
 
 from reports.models import Report, ReportImage
-from .models import MatchResult
+from .models import MatchResult, MatchingAuditLog, MatchFeedback
+from .ai_interface import FaceEngineInterface
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,83 @@ class MatchingConfig:
             'location': 0.1,
             'features': 0.1
         }
+        self.cache_timeout = 60 * 60 * 24  # 24 ساعة
+
+
+class ArabicNameMatcher:
+    """مطابقة متخصصة للأسماء العربية"""
+    
+    # أنماط الأسماء العربية الشائعة
+    COMMON_PATTERNS = {
+        'عبد': ['عبدالله', 'عبدالرحمن', 'عبدالعزيز', 'عبداللطيف', 'عبدالرؤوف'],
+        'أبو': ['أبوبكر', 'أبوبكر', 'أبو بكر'],
+        'آل': ['آلسعود', 'آل الشيخ', 'آل ثاني'],
+        'بن': ['بني', 'بنت']
+    }
+    
+    # أحرف التشابه
+    SIMILAR_CHARS = {
+        'ا': ['إ', 'أ', 'آ'],
+        'ه': ['ة'],
+        'ي': ['ى'],
+        'و': ['ؤ'],
+    }
+    
+    @classmethod
+    def normalize_arabic_deep(cls, text):
+        """توحيد عميق للأسماء العربية"""
+        if not text:
+            return ""
+        
+        # تحويل إلى نص
+        text = str(text)
+        
+        # توحيد الحروف المتشابهة
+        for target, sources in cls.SIMILAR_CHARS.items():
+            for source in sources:
+                text = text.replace(source, target)
+        
+        # إزالة التشكيل
+        text = re.sub(r'[\u064B-\u0652]', '', text)
+        
+        # إزالة ال التعريف
+        text = re.sub(r'^ال', '', text)
+        text = re.sub(r'\s+ال', ' ', text)
+        
+        # إزالة المسافات الزائدة
+        text = ' '.join(text.split())
+        
+        return text.strip()
+    
+    @classmethod
+    def calculate_name_similarity(cls, name1, name2):
+        """حساب تشابه الأسماء العربية"""
+        if not name1 or not name2:
+            return 0.0
+        
+        norm1 = cls.normalize_arabic_deep(name1)
+        norm2 = cls.normalize_arabic_deep(name2)
+        
+        if norm1 == norm2:
+            return 1.0
+        
+        # استخدام خوارزمية Jaro-Winkler المناسبة للعربية
+        similarity = jellyfish.jaro_winkler_similarity(norm1, norm2)
+        
+        # التحقق من الأنماط الشائعة
+        for pattern, variants in cls.COMMON_PATTERNS.items():
+            if pattern in norm1:
+                for variant in variants:
+                    if variant in norm2:
+                        similarity = max(similarity, 0.9)
+                        break
+            elif pattern in norm2:
+                for variant in variants:
+                    if variant in norm1:
+                        similarity = max(similarity, 0.9)
+                        break
+        
+        return similarity
 
 
 class FaceMatcher:
@@ -35,6 +114,33 @@ class FaceMatcher:
     
     def __init__(self):
         self.config = MatchingConfig()
+        self.face_interface = FaceEngineInterface()
+    
+    def get_cached_embeddings(self, report_id):
+        """الحصول على بصمات الوجه من الكاش"""
+        cache_key = f'face_embeddings_{report_id}'
+        cached = cache.get(cache_key)
+        
+        if cached is not None:
+            return cached
+        
+        # جلب من قاعدة البيانات
+        images = ReportImage.objects.filter(
+            report_id=report_id,
+            face_embedding__isnull=False
+        ).values_list('face_embedding', 'quality_score')
+        
+        embeddings = [(emb, qual) for emb, qual in images if emb]
+        
+        # تخزين في الكاش
+        cache.set(cache_key, embeddings, self.config.cache_timeout)
+        
+        return embeddings
+    
+    def invalidate_cache(self, report_id):
+        """مسح الكاش عند تحديث الصور"""
+        cache_key = f'face_embeddings_{report_id}'
+        cache.delete(cache_key)
     
     def calculate_similarity(self, embedding1, embedding2):
         """حساب تشابه جيب التمام (Cosine Similarity)"""
@@ -91,75 +197,41 @@ class FaceMatcher:
         else:
             return 'low'
     
-    def get_age_from_person(self, person):
-        """حساب العمر من تاريخ الميلاد"""
-        if person and person.date_of_birth:
-            today = date.today()
-            return today.year - person.date_of_birth.year
-        return None
-    
-    def get_priority_level(self, similarity_score, report1, report2):
-        """تحديد مستوى الأولوية بناءً على التشابه ونوع البلاغ"""
-        # حساب العمر من تاريخ الميلاد
-        age1 = self.get_age_from_person(report1.person) if report1.person else None
-        age2 = self.get_age_from_person(report2.person) if report2.person else None
+    def calculate_similarity_batch(self, report1, report2):
+        """حساب التشابه بين مجموعتين من الصور"""
+        embeddings1 = self.get_cached_embeddings(report1.report_id)
+        embeddings2 = self.get_cached_embeddings(report2.report_id)
         
-        # حالات عاجلة: أطفال أو كبار سن
-        is_child = (age1 and age1 < 12) or (age2 and age2 < 12)
-        is_elderly = (age1 and age1 > 60) or (age2 and age2 > 60)
-        
-        if is_child or is_elderly:
-            if similarity_score > 0.5:
-                return 'urgent'
-            elif similarity_score > 0.3:
-                return 'high'
-        
-        if similarity_score > 0.7:
-            return 'high'
-        elif similarity_score > 0.5:
-            return 'normal'
-        else:
-            return 'low'
-    
-    def match_single_pair(self, report1, report2):
-        """مطابقة زوج واحد باستخدام الصور"""
-        try:
-            # الحصول على الصور مع البصمات
-            report1_images = ReportImage.objects.filter(
-                report=report1,
-                face_embedding__isnull=False
-            )
-            report2_images = ReportImage.objects.filter(
-                report=report2,
-                face_embedding__isnull=False
-            )
-            
-            if not report1_images.exists() or not report2_images.exists():
-                return 0.0, 0.0, 'low'
-            
-            best_similarity = 0.0
-            best_quality1 = 0.0
-            best_quality2 = 0.0
-            
-            # المقارنة بين جميع الصور
-            for img1 in report1_images:
-                for img2 in report2_images:
-                    sim = self.calculate_similarity(img1.face_embedding, img2.face_embedding)
-                    if sim > best_similarity:
-                        best_similarity = sim
-                        best_quality1 = img1.quality_score or 0.5
-                        best_quality2 = img2.quality_score or 0.5
-            
-            if best_similarity > 0:
-                confidence = self.calculate_confidence(best_similarity, best_quality1, best_quality2)
-                confidence_level = self.get_confidence_level(confidence)
-                return best_similarity, confidence, confidence_level
-            
+        if not embeddings1 or not embeddings2:
             return 0.0, 0.0, 'low'
-            
-        except Exception as e:
-            logger.error(f"خطأ في مطابقة الزوج: {e}")
-            return 0.0, 0.0, 'low'
+        
+        best_similarity = 0.0
+        best_quality = (0.5, 0.5)
+        match_count = 0
+        
+        for emb1, qual1 in embeddings1:
+            for emb2, qual2 in embeddings2:
+                sim = self.calculate_similarity(emb1, emb2)
+                if sim > best_similarity:
+                    best_similarity = sim
+                    best_quality = (qual1 or 0.5, qual2 or 0.5)
+                if sim > 0.5:
+                    match_count += 1
+        
+        # تحسين: إذا كان هناك عدة صور متطابقة
+        if match_count > 1:
+            best_similarity = min(best_similarity + 0.1, 1.0)
+        
+        if best_similarity > self.config.similarity_threshold:
+            confidence = self.calculate_confidence(
+                best_similarity, 
+                best_quality[0], 
+                best_quality[1]
+            )
+            confidence_level = self.get_confidence_level(confidence)
+            return best_similarity, confidence, confidence_level
+        
+        return best_similarity, 0.0, 'low'
 
 
 class ReportMatcher:
@@ -168,6 +240,23 @@ class ReportMatcher:
     def __init__(self):
         self.face_matcher = FaceMatcher()
         self.config = self.face_matcher.config
+    
+    def prevent_duplicate_matches(self, report1, report2):
+        """منع إنشاء مطابقات مكررة"""
+        existing = MatchResult.objects.filter(
+            (Q(report_1=report1) & Q(report_2=report2)) |
+            (Q(report_1=report2) & Q(report_2=report1))
+        ).first()
+        
+        if existing:
+            # إذا كانت المطابقة موجودة ولم يتم رفضها
+            if existing.match_status not in ['rejected', 'false_positive']:
+                return existing
+            # إذا كانت مرفوضة، يمكن إنشاء مطابقة جديدة إذا كانت النتيجة أفضل
+            elif existing.similarity_score < 0.8:
+                return None
+        
+        return None
 
     def match_by_location(self, report1, report2):
         """مطابقة الموقع الجغرافي"""
@@ -221,7 +310,6 @@ class ReportMatcher:
         if person1.date_of_birth and person2.date_of_birth:
             today = date.today()
             
-            # حساب العمر التقريبي لكل شخص
             age1 = today.year - person1.date_of_birth.year
             age2 = today.year - person2.date_of_birth.year
             
@@ -237,62 +325,25 @@ class ReportMatcher:
                 total_weight += 0.3
         
         return feature_score / total_weight if total_weight > 0 else 0.5
-    
-    def normalize_arabic(self, text):
-        """توحيد الحروف العربية المتشابهة لتسهيل المطابقة"""
-        if not text:
-            return ""
-        # توحيد الألفات
-        text = re.sub("[إأآا]", "ا", text)
-        # توحيد الهاء والتاء المربوطة
-        text = re.sub("ة", "ه", text)
-        # توحيد الياء والألف المقصورة
-        text = re.sub("ى", "ي", text)
-        # إزالة العلامات (التشكيل)
-        text = re.sub(r'[\u064B-\u0652]', '', text)
-        return text.strip()
 
     def match_by_name(self, report1, report2):
         """مقارنة الأسماء باستخدام التشابه النصي والصوتي"""
         if not report1.person or not report2.person:
             return 0.0
         
-        name1 = self.normalize_arabic(str(report1.person))
-        name2 = self.normalize_arabic(str(report2.person))
+        name1 = str(report1.person)
+        name2 = str(report2.person)
         
         if not name1 or not name2:
             return 0.0
         
-        # تطابق تام بعد التوحيد
-        if name1 == name2:
-            return 1.0
-            
-        # استخدام خوارزمية Jaro-Winkler للأسماء
-        jaro_sim = jellyfish.jaro_winkler_similarity(name1, name2)
-        
-        # استخدام Levenshtein للكلمات المشتركة
-        words1 = name1.split()
-        words2 = name2.split()
-        
-        match_count = 0
-        for w1 in words1:
-            for w2 in words2:
-                if jellyfish.levenshtein_distance(w1, w2) <= 1:
-                    match_count += 1
-                    break
-        
-        word_sim = (2 * match_count) / (len(words1) + len(words2)) if (len(words1) + len(words2)) > 0 else 0.0
-        
-        # النتيجة النهائية هي مزيج بينهما
-        final_score = (jaro_sim * 0.4) + (word_sim * 0.6)
-        
-        return final_score
+        return ArabicNameMatcher.calculate_name_similarity(name1, name2)
 
     def calculate_hybrid_score(self, report1, report2):
         """حساب درجة المطابقة الهجينة مع تفاصيل توضيحية"""
         try:
             # حساب التشابه بالوجه
-            face_sim, face_conf, face_level = self.face_matcher.match_single_pair(report1, report2)
+            face_sim, face_conf, face_level = self.face_matcher.calculate_similarity_batch(report1, report2)
             
             # حساب التشابه بالبيانات
             name_score = self.match_by_name(report1, report2)
@@ -323,7 +374,7 @@ class ReportMatcher:
                 confidence_level = self.face_matcher.get_confidence_level(hybrid_confidence)
             
             # تحديد الأولوية
-            priority_level = self.face_matcher.get_priority_level(hybrid_similarity, report1, report2)
+            priority_level = self.get_priority_level(hybrid_similarity, report1, report2)
 
             details = {
                 'face_similarity': round(face_sim, 2),
@@ -338,6 +389,36 @@ class ReportMatcher:
         except Exception as e:
             logger.error(f"خطأ في حساب النتيجة الهجينة: {e}")
             return 0.0, 0.0, 'low', 'normal', {}
+
+    def get_priority_level(self, similarity_score, report1, report2):
+        """تحديد مستوى الأولوية بناءً على التشابه ونوع البلاغ"""
+        # حساب العمر من تاريخ الميلاد
+        age1 = self.get_age_from_person(report1.person) if report1.person else None
+        age2 = self.get_age_from_person(report2.person) if report2.person else None
+        
+        # حالات عاجلة: أطفال أو كبار سن
+        is_child = (age1 and age1 < 12) or (age2 and age2 < 12)
+        is_elderly = (age1 and age1 > 60) or (age2 and age2 > 60)
+        
+        if is_child or is_elderly:
+            if similarity_score > 0.5:
+                return 'urgent'
+            elif similarity_score > 0.3:
+                return 'high'
+        
+        if similarity_score > 0.7:
+            return 'high'
+        elif similarity_score > 0.5:
+            return 'normal'
+        else:
+            return 'low'
+    
+    def get_age_from_person(self, person):
+        """حساب العمر من تاريخ الميلاد"""
+        if person and person.date_of_birth:
+            today = date.today()
+            return today.year - person.date_of_birth.year
+        return None
 
     def _generate_explanation(self, face, name, loc, feat):
         """توليد شرح لسبب المطابقة"""
@@ -378,11 +459,18 @@ class ReportMatcher:
                 status='active'
             ).exclude(report_id=report.report_id).select_related(
                 'person', 
-                'lost_governorate', 'lost_district', 'lost_uzlah'
+                'lost_governorate', 'lost_district'
             )
             
             matches_count = 0
+            matches_created = []
+            
             for target in target_reports:
+                # التحقق من عدم وجود مطابقة سابقة
+                existing = self.prevent_duplicate_matches(report, target)
+                if existing:
+                    continue
+                
                 similarity, confidence, conf_level, priority, details = self.calculate_hybrid_score(report, target)
                 
                 if similarity >= self.config.similarity_threshold:
@@ -393,51 +481,58 @@ class ReportMatcher:
                         report_missing, report_found = target, report
                     
                     # حفظ النتيجة
-                    match, created = MatchResult.objects.get_or_create(
+                    match = MatchResult.objects.create(
                         report_1=report_missing,
                         report_2=report_found,
-                        defaults={
-                            'similarity_score': similarity,
-                            'confidence_level': conf_level,
-                            'match_type': 'auto',
-                            'match_status': 'pending',
-                            'priority_level': priority,
-                            'match_reason': details.get('explanation', ''),
-                            'match_details': details
-                        }
+                        similarity_score=similarity,
+                        confidence_level=conf_level,
+                        match_type='auto',
+                        match_status='pending',
+                        priority_level=priority,
+                        match_reason=details.get('explanation', ''),
+                        match_details=details
                     )
                     
-                    if not created:
-                        # تحديث النتيجة إذا كانت أفضل
-                        if similarity > match.similarity_score:
-                            match.similarity_score = similarity
-                            match.confidence_level = conf_level
-                            match.priority_level = priority
-                            match.match_details = details
-                            match.save(update_fields=['similarity_score', 'confidence_level', 'priority_level', 'match_details'])
-                    
                     matches_count += 1
+                    matches_created.append(match)
             
             # تسجيل عملية المطابقة
             if matches_count > 0:
-                from .models import MatchingAuditLog
                 MatchingAuditLog.objects.create(
                     action_type='single_match',
                     report_count=matches_count,
                     status='success',
                     message=f"تم العثور على {matches_count} مطابقة للبلاغ {report.report_code}"
                 )
+                
+                # إرسال إشعارات للمطابقات عالية الأولوية
+                self._notify_high_priority_matches(matches_created)
             
             return matches_count
             
         except Exception as e:
             logger.error(f"خطأ في تشغيل المطابقة للبلاغ {report.report_code}: {e}")
             
-            # تسجيل الخطأ
-            from .models import MatchingAuditLog
             MatchingAuditLog.objects.create(
                 action_type='single_match',
                 status='error',
                 message=str(e)
             )
             return 0
+    
+    def _notify_high_priority_matches(self, matches):
+        """إرسال إشعارات للمطابقات عالية الأولوية"""
+        try:
+            from notifications.services import NotificationService
+            
+            for match in matches:
+                if match.priority_level in ['urgent', 'high']:
+                    NotificationService.notify_admins(
+                        title="مطابقة جديدة عالية الأولوية",
+                        message=f"تم العثور على مطابقة جديدة بنسبة {int(match.similarity_score * 100)}%",
+                        link=f"/admin-dashboard/matches/{match.match_id}/"
+                    )
+        except ImportError:
+            logger.warning("خدمة الإشعارات غير متوفرة")
+        except Exception as e:
+            logger.error(f"خطأ في إرسال الإشعارات: {e}")

@@ -6,7 +6,7 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h4 class="mb-0 fw-bold text-primary">إدارة المطابقات الذكية</h4>
-        <p class="text-muted small mb-0">مراجعة وتأكيد نتائج البحث السحابي المعتمدة على الذكاء الاصطناعي</p>
+        <p class="text-muted small mb-0">مراجعة وتأكيد نتائج البحث المعتمدة على الذكاء الاصطناعي</p>
     </div>
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb mb-0">
@@ -36,13 +36,16 @@
                             <option value="pending" selected>بانتظار المراجعة</option>
                             <option value="accepted">تم التأكيد</option>
                             <option value="rejected">مرفوض</option>
+                            <option value="false_positive">إيجابي خاطئ</option>
                         </select>
                     </div>
                     <div class="col-md-2">
                         <select name="priority_level" class="form-select border-0 bg-light">
                             <option value="">كل الأولويات</option>
-                            <option value="urgent">عاجل (أطفال/مسنين)</option>
+                            <option value="urgent">عاجل</option>
                             <option value="high">مرتفع</option>
+                            <option value="normal">عادي</option>
+                            <option value="low">منخفض</option>
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -53,8 +56,9 @@
                         </div>
                     </div>
                     <div class="col-md-2">
-                        <button type="submit" class="btn btn-primary w-100 shadow-sm"><i class="fas fa-filter me-1"></i>
-                            فلترة</button>
+                        <button type="submit" class="btn btn-primary w-100 shadow-sm">
+                            <i class="fas fa-filter me-1"></i> فلترة
+                        </button>
                     </div>
                 </form>
             </div>
@@ -81,7 +85,7 @@
         <table class="table table-hover align-middle mb-0" id="matches-table">
             <thead class="bg-light text-muted small text-uppercase">
                 <tr>
-                    <th class="px-4">رقم التطابق</th>
+                    <th class="px-4">المعرف</th>
                     <th>الأطراف (مفقود ↔ معثور)</th>
                     <th>النوع</th>
                     <th>نسبة التشابه</th>
@@ -91,15 +95,16 @@
                 </tr>
             </thead>
             <tbody id="matches-list">
-                <!-- Data loaded via JS -->
                 <tr>
                     <td colspan="7" class="text-center py-5">
-                        <div class="spinner-border text-primary spinner-border-sm me-2"></div> جاري تحميل سجل
-                        التطابقات...
+                        <div class="spinner-border text-primary spinner-border-sm me-2"></div> جاري تحميل سجل التطابقات...
                     </td>
                 </tr>
             </tbody>
         </table>
+    </div>
+    <div class="card-footer bg-white border-0 text-center" id="matches-pagination">
+        <!-- Pagination will be loaded here -->
     </div>
 </div>
 
@@ -111,8 +116,8 @@
                 <div class="d-flex align-items-center">
                     <i class="fas fa-shield-alt fs-4 me-3 text-warning"></i>
                     <div>
-                        <h5 class="modal-title fw-bold mb-0">مركز التحقق والمطابقة السحابية</h5>
-                        <small class="opacity-75" id="modal-match-id">Match ID: Loading...</small>
+                        <h5 class="modal-title fw-bold mb-0">مركز التحقق والمطابقة</h5>
+                        <small class="opacity-75" id="modal-match-id">Match ID: جاري التحميل...</small>
                     </div>
                 </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -125,14 +130,12 @@
                         <!-- Missing Report Card -->
                         <div class="col-md-5">
                             <div class="card h-100 border-0 shadow-sm overflow-hidden rounded-4">
-                                <div class="bg-primary text-white text-center py-2 fw-bold small">بلاغ المفقود (Missing)
-                                </div>
+                                <div class="bg-primary text-white text-center py-2 fw-bold small">بلاغ المفقود (Missing)</div>
                                 <div class="position-relative">
                                     <img id="orig-img" src="" class="card-img-top"
                                         style="height: 400px; object-fit: cover; cursor: zoom-in;">
                                     <div class="position-absolute bottom-0 end-0 p-2">
-                                        <span class="badge bg-dark bg-opacity-50 rounded-pill"
-                                            id="orig-id-badge"></span>
+                                        <span class="badge bg-dark bg-opacity-50 rounded-pill" id="orig-id-badge"></span>
                                     </div>
                                 </div>
                                 <div class="card-body">
@@ -148,22 +151,18 @@
                                     class="rounded-circle d-flex flex-column align-items-center justify-content-center mx-auto mb-2 shadow-sm"
                                     style="width: 130px; height: 130px; border: 10px solid #eee; background: #fff;">
                                     <span class="fs-4 fw-bold" id="score-val">--%</span>
-                                    <small class="text-muted" style="font-size: 0.7rem;">تشابه وجه</small>
+                                    <small class="text-muted" style="font-size: 0.7rem;">تشابه</small>
                                 </div>
                                 <div id="confidence-badge" class="badge rounded-pill mb-2">ثقة متوسطة</div>
                                 <div id="priority-badge" class="badge rounded-pill">أولوية عادية</div>
                             </div>
 
                             <div class="w-100 text-center px-2">
-                                <div class="small fw-bold text-primary mb-2 mt-4"><i class="fas fa-robot me-1"></i>
-                                    لماذا هذا التطابق؟</div>
+                                <div class="small fw-bold text-primary mb-2 mt-4"><i class="fas fa-robot me-1"></i> لماذا هذا التطابق؟</div>
                                 <div id="match-reason-box"
                                     class="small p-3 rounded-4 bg-white border border-primary border-opacity-25 shadow-sm text-start"
                                     style="font-size: 0.8rem; min-height: 80px;">
                                     جاري تحليل الأدلة...
-                                </div>
-                                <div class="mt-3 small text-muted">
-                                    Model: <span id="model-ver" class="fw-bold">--</span>
                                 </div>
                             </div>
                         </div>
@@ -171,14 +170,12 @@
                         <!-- Found Report Card -->
                         <div class="col-md-5">
                             <div class="card h-100 border-0 shadow-sm overflow-hidden rounded-4">
-                                <div class="bg-success text-white text-center py-2 fw-bold small">بلاغ المعثور عليه
-                                    (Found)</div>
+                                <div class="bg-success text-white text-center py-2 fw-bold small">بلاغ المعثور عليه (Found)</div>
                                 <div class="position-relative">
                                     <img id="match-img" src="" class="card-img-top"
                                         style="height: 400px; object-fit: cover; cursor: zoom-in;">
                                     <div class="position-absolute bottom-0 end-0 p-2">
-                                        <span class="badge bg-dark bg-opacity-50 rounded-pill"
-                                            id="match-id-badge"></span>
+                                        <span class="badge bg-dark bg-opacity-50 rounded-pill" id="match-id-badge"></span>
                                     </div>
                                 </div>
                                 <div class="card-body">
@@ -212,8 +209,7 @@
                     <div id="contact-info-section"
                         class="card border-primary border-opacity-50 shadow-sm rounded-4 mb-4 d-none">
                         <div class="card-body bg-primary bg-opacity-10 py-4 text-center">
-                            <h6 class="fw-bold text-primary mb-3"><i class="fas fa-address-card me-2"></i>معلومات
-                                الاتصال المباشر (تم تأكيد التطابق)</h6>
+                            <h6 class="fw-bold text-primary mb-3"><i class="fas fa-address-card me-2"></i>معلومات الاتصال المباشر (تم تأكيد التطابق)</h6>
                             <div class="row g-4">
                                 <div class="col-md-6 border-end">
                                     <p class="mb-1 fw-bold">جهة بلاغ المفقود</p>
@@ -230,8 +226,7 @@
                     <!-- Review Details (Visible if reviewed) -->
                     <div id="review-details-section" class="card border-0 shadow-sm rounded-4 mb-4 bg-light d-none">
                         <div class="card-body">
-                            <h6 class="fw-bold mb-3 text-secondary"><i class="fas fa-clipboard-check me-2"></i>تفاصيل
-                                المراجعة</h6>
+                            <h6 class="fw-bold mb-3 text-secondary"><i class="fas fa-clipboard-check me-2"></i>تفاصيل المراجعة</h6>
                             <div class="d-flex justify-content-between align-items-center mb-2">
                                 <div>
                                     <span class="text-muted small">تمت المراجعة بواسطة:</span>
@@ -252,20 +247,20 @@
                     <!-- Action/Decision Area -->
                     <div class="card border-0 shadow-lg rounded-4 overflow-hidden" id="governance-area">
                         <div class="card-body p-4 bg-white">
-                            <h6 class="fw-bold mb-3"><i class="fas fa-gavel me-2"></i>اتخاذ قرار نهائي كمسؤول نظام</h6>
+                            <h6 class="fw-bold mb-3"><i class="fas fa-gavel me-2"></i>اتخاذ قرار نهائي</h6>
                             <textarea id="review-notes" class="form-control border-light-dark mb-4 p-3" rows="3"
-                                placeholder="أدخل سبب القرار بالتفصيل (متطلب إلزامي للحوكمة)..."></textarea>
+                                placeholder="أدخل سبب القرار بالتفصيل..."></textarea>
 
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <div class="d-flex gap-2">
                                         <button class="btn btn-danger btn-lg flex-grow-1 fw-bold"
                                             onclick="updateMatchStatus('reject')">
-                                            <i class="fas fa-times-circle me-1"></i> رفض التطابق
+                                            <i class="fas fa-times-circle me-1"></i> رفض
                                         </button>
                                         <button class="btn btn-outline-danger btn-lg"
                                             onclick="updateMatchStatus('false_positive')"
-                                            title="تطابق إيجابي خاطئ خوارزمياً">
+                                            title="إيجابي خاطئ">
                                             FP
                                         </button>
                                     </div>
@@ -273,7 +268,7 @@
                                 <div class="col-md-6">
                                     <button class="btn btn-success btn-lg w-100 fw-bold shadow"
                                         onclick="updateMatchStatus('accept')">
-                                        <i class="fas fa-check-double me-1"></i> تأكيد التطابق الكلي والحل
+                                        <i class="fas fa-check-double me-1"></i> تأكيد التطابق
                                     </button>
                                 </div>
                             </div>
@@ -283,7 +278,7 @@
             </div>
 
             <div class="modal-footer bg-light border-0">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق المعالجة</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
             </div>
         </div>
     </div>
@@ -294,47 +289,120 @@
 <script>
     $(document).ready(function () {
         let activeMatchId = null;
+        let currentPage = 1;
+        let totalPages = 1;
 
-        function loadMatches(params = {}) {
-            params.match_status = params.match_status || 'pending';
+        function loadMatches(params = {}, page = 1) {
+            // إعداد المعاملات
+            let queryParams = {
+                page: page,
+                page_size: 10
+            };
+            
+            if (params.search) queryParams.search = params.search;
+            if (params.match_status) queryParams.match_status = params.match_status;
+            if (params.priority_level) queryParams.priority_level = params.priority_level;
+            if (params.similarity_score__gte) {
+                queryParams.similarity_score__gte = parseFloat(params.similarity_score__gte) / 100;
+            }
+            
             $.ajax({
                 url: '/api/matching/matches/',
                 method: 'GET',
-                data: params,
+                data: queryParams,
                 success: function (response) {
-                    renderMatches(response.results);
-                    // Update pending count if we filtered for pending
-                    if (params.match_status === 'pending') {
-                        $('#pending-count').text(response.count);
+                    renderMatches(response.results || []);
+                    
+                    // تحديث معلومات التصفح
+                    if (response.count !== undefined) {
+                        totalPages = Math.ceil(response.count / 10);
+                        renderPagination(page, totalPages);
                     }
+                    
+                    // تحديث عدد المطابقات المعلقة
+                    if (params.match_status === 'pending') {
+                        $('#pending-count').text(response.count || 0);
+                    }
+                },
+                error: function (xhr) {
+                    console.error('Error loading matches:', xhr);
+                    $('#matches-list').html('<tr><td colspan="7" class="text-center py-5 text-danger">حدث خطأ في تحميل البيانات</td></tr>');
+                }
+            });
+        }
+
+        function renderPagination(current, total) {
+            let html = '<nav><ul class="pagination pagination-sm justify-content-center mb-0">';
+            
+            if (current > 1) {
+                html += `<li class="page-item"><a class="page-link" href="#" data-page="${current - 1}">السابق</a></li>`;
+            }
+            
+            for (let i = 1; i <= total; i++) {
+                if (i === current) {
+                    html += `<li class="page-item active"><span class="page-link">${i}</span></li>`;
+                } else if (i === 1 || i === total || (i >= current - 2 && i <= current + 2)) {
+                    html += `<li class="page-item"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+                } else if (i === current - 3 || i === current + 3) {
+                    html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                }
+            }
+            
+            if (current < total) {
+                html += `<li class="page-item"><a class="page-link" href="#" data-page="${current + 1}">التالي</a></li>`;
+            }
+            
+            html += '</ul></nav>';
+            $('#matches-pagination').html(html);
+            
+            // ربط أحداث النقر
+            $('#matches-pagination .page-link').click(function(e) {
+                e.preventDefault();
+                let page = $(this).data('page');
+                if (page) {
+                    let formData = $('#matches-filter-form').serializeArray();
+                    let params = {};
+                    formData.forEach(item => {
+                        if (item.value) params[item.name] = item.value;
+                    });
+                    loadMatches(params, page);
                 }
             });
         }
 
         $('#matches-filter-form').on('submit', function (e) {
             e.preventDefault();
-            const formData = new FormData(this);
+            const formData = $(this).serializeArray();
             const params = {};
-            formData.forEach((value, key) => {
-                if (value) {
-                    if (key === 'similarity_score__gte') params[key] = parseFloat(value) / 100;
-                    else params[key] = value;
+            formData.forEach(item => {
+                if (item.value) {
+                    params[item.name] = item.value;
                 }
             });
-            loadMatches(params);
+            loadMatches(params, 1);
         });
 
         function renderMatches(results) {
+            if (!results || results.length === 0) {
+                $('#matches-list').html('<tr><td colspan="7" class="text-center py-5 text-muted">لا توجد مطابقات</td></tr>');
+                return;
+            }
+
             let html = '';
             results.forEach(m => {
                 const statusBadge = getStatusBadge(m.match_status);
                 const confidenceClass = getConfidenceClass(m.confidence_level);
                 const priorityBadge = getPriorityBadge(m.priority_level);
-                const matchType = m.match_type === 'auto' ? '<i class="fas fa-robot text-primary me-1" title="AI"></i> تلقائي' : '<i class="fas fa-user-edit text-info me-1" title="Manual"></i> يدوي';
+                const matchType = m.match_type === 'auto' ? 
+                    '<span class="badge bg-info"><i class="fas fa-robot me-1"></i> تلقائي</span>' : 
+                    '<span class="badge bg-secondary"><i class="fas fa-user me-1"></i> يدوي</span>';
+                
+                const scorePercent = Math.round((m.similarity_score || 0) * 100);
+                const scoreColor = getScoreColor(scorePercent);
 
                 html += `
                 <tr class="${m.priority_level === 'urgent' ? 'bg-light-danger' : ''}">
-                    <td class="px-4 fw-bold small text-muted">ID-${m.id}</td>
+                    <td class="px-4 fw-bold small text-muted">${m.match_id ? m.match_id.substring(0, 8) + '...' : '---'}</td>
                     <td>
                         <div class="d-flex align-items-center">
                             <div class="avatar-group me-3">
@@ -342,17 +410,17 @@
                                 <img src="${m.found_report_image || '/static/images/placeholder.png'}" class="rounded-circle shadow-sm" width="35" height="35" style="object-fit: cover; margin-left: -10px;">
                             </div>
                             <div>
-                                <div class="fw-bold">${m.missing_person_name} ↔ ${m.found_person_name}</div>
-                                <div class="small text-muted">${m.missing_report_code} | ${m.found_report_code}</div>
+                                <div class="fw-bold">${m.missing_person_name || '---'} ↔ ${m.found_person_name || '---'}</div>
+                                <div class="small text-muted">${m.missing_report_code || '---'} | ${m.found_report_code || '---'}</div>
                             </div>
                         </div>
                     </td>
-                    <td class="small">${matchType}</td>
+                    <td>${matchType}</td>
                     <td>
                         <div class="progress" style="height: 6px; width: 80px;">
-                            <div class="progress-bar ${getScoreColor(m.similarity_score * 100)}" style="width: ${m.similarity_score * 100}%"></div>
+                            <div class="progress-bar ${scoreColor}" style="width: ${scorePercent}%"></div>
                         </div>
-                        <small class="fw-bold">${Math.round(m.similarity_score * 100)}%</small>
+                        <small class="fw-bold">${scorePercent}%</small>
                     </td>
                     <td>
                         <div class="mb-1">${confidenceClass}</div>
@@ -360,96 +428,97 @@
                     </td>
                     <td>${statusBadge}</td>
                     <td class="text-center">
-                        <button class="btn btn-sm btn-white border shadow-sm px-3" onclick="viewMatch('${m.match_id}')">مراجعة</button>
+                        <button class="btn btn-sm btn-outline-primary" onclick="viewMatch('${m.match_id}')">
+                            <i class="fas fa-eye me-1"></i> مراجعة
+                        </button>
                     </td>
                 </tr>
                 `;
             });
-            $('#matches-list').html(html || '<tr><td colspan="7" class="text-center py-5">لا توجد سجلات مطابقة حالياً بالمعايير المختارة</td></tr>');
+            $('#matches-list').html(html);
         }
 
         window.viewMatch = function (matchId) {
+            if (!matchId) return;
+            
             activeMatchId = matchId;
             $.ajax({
                 url: `/api/matching/matches/${matchId}/`,
                 method: 'GET',
                 success: function (m) {
-                    $('#modal-match-id').text(`Match ID: ${m.match_id} | Detected at: ${new Date(m.detected_at).toLocaleString('ar-SA')}`);
+                    $('#modal-match-id').text(`Match ID: ${m.match_id} | ${new Date(m.detected_at).toLocaleString('ar-SA')}`);
+                    
+                    // تحديث الصور
                     $('#orig-img').attr('src', m.missing_report_image || '/static/images/placeholder.png');
                     $('#match-img').attr('src', m.found_report_image || '/static/images/placeholder.png');
-                    $('#orig-id-badge').text(m.missing_report_code);
-                    $('#match-id-badge').text(m.found_report_code);
+                    $('#orig-id-badge').text(m.missing_report_code || '---');
+                    $('#match-id-badge').text(m.found_report_code || '---');
 
-                    const score = Math.round(m.similarity_score * 100);
+                    const score = Math.round((m.similarity_score || 0) * 100);
                     $('#score-val').text(score + '%');
                     $('#match-score-circle').css('border-color', getScoreHexColor(score));
 
-                    $('#confidence-badge').text(getConfidenceText(m.confidence_level)).attr('class', 'badge rounded-pill mb-2 ' + getConfidenceBadgeClass(m.confidence_level));
-                    $('#priority-badge').text(getPriorityText(m.priority_level)).attr('class', 'badge rounded-pill ' + getPriorityBadgeClass(m.priority_level));
+                    $('#confidence-badge').text(getConfidenceText(m.confidence_level))
+                        .attr('class', 'badge rounded-pill mb-2 ' + getConfidenceBadgeClass(m.confidence_level));
+                    $('#priority-badge').text(getPriorityText(m.priority_level))
+                        .attr('class', 'badge rounded-pill ' + getPriorityBadgeClass(m.priority_level));
 
-                    const details = m.match_details?.hybrid_details || {};
-                    $('#model-ver').text(m.match_details?.matching_version || 'v2.0');
-                    $('#match-reason-box').html(details.explanation || 'تم الاكتشاف بناءً على التقارب في البيانات العامة مدموجاً بالتعرف على الوجه.');
+                    $('#match-reason-box').html(m.match_reason || 'تم الاكتشاف بناءً على التقارب في البيانات.');
 
-                    // Comparison Header Info
-                    $('#orig-info').html(`<h5 class="fw-bold mb-1">${m.missing_person_name}</h5><p class="text-muted small mb-0">${m.missing_report_code}</p>`);
-                    $('#match-info').html(`<h5 class="fw-bold mb-1">${m.found_person_name}</h5><p class="text-muted small mb-0">${m.found_report_code}</p>`);
+                    // معلومات الأطراف
+                    $('#orig-info').html(`<h5 class="fw-bold mb-1">${m.missing_person_name || '---'}</h5>`);
+                    $('#match-info').html(`<h5 class="fw-bold mb-1">${m.found_person_name || '---'}</h5>`);
 
-                    // Populate Data Comparison
+                    // بيانات المقارنة
                     populateComparisonTable(m);
 
-                    // Handle contact reveal
+                    // معلومات الاتصال
                     if (m.match_status === 'accepted' && m.contact_info) {
                         $('#contact-info-section').removeClass('d-none');
-                        $('#missing-contact-details').html(`<i class="fas fa-phone me-2"></i>${m.contact_info.missing_phone} <br> <i class="fas fa-envelope me-2 small"></i>${m.contact_info.missing_email || 'لا يوجد'}`);
-                        $('#found-contact-details').html(`<i class="fas fa-phone me-2"></i>${m.contact_info.found_phone} <br> <i class="fas fa-envelope me-2 small"></i>${m.contact_info.found_email || 'لا يوجد'}`);
+                        $('#missing-contact-details').html(`<i class="fas fa-phone me-2"></i>${m.contact_info.missing_phone || '---'}`);
+                        $('#found-contact-details').html(`<i class="fas fa-phone me-2"></i>${m.contact_info.found_phone || '---'}`);
                     } else {
                         $('#contact-info-section').addClass('d-none');
                     }
 
-                    // Handle Review Details & Governance
+                    // معلومات المراجعة
                     if (['accepted', 'rejected', 'false_positive'].includes(m.match_status)) {
                         $('#review-details-section').removeClass('d-none');
                         $('#reviewer-name').text(m.reviewed_by_name || 'غير متوفر');
                         $('#review-date').text(m.reviewed_at ? new Date(m.reviewed_at).toLocaleString('ar-SA') : 'غير متوفر');
                         $('#review-notes-display').text(m.review_notes || 'لا توجد ملاحظات');
-
-                        // Hide governance area for decided matches to prevent accidental changes
                         $('#governance-area').addClass('d-none');
                     } else {
                         $('#review-details-section').addClass('d-none');
                         $('#governance-area').removeClass('d-none');
-                        $('#review-notes').val(m.review_notes || '');
+                        $('#review-notes').val('');
                     }
 
                     $('#matchCompareModal').modal('show');
+                },
+                error: function (xhr) {
+                    console.error('Error loading match details:', xhr);
+                    alert('حدث خطأ في تحميل تفاصيل المطابقة');
                 }
             });
         };
 
         function populateComparisonTable(m) {
-            const missing = m.missing_details || {}; // Assume these are simplified or use direct report fields if serialized
-            const found = m.found_details || {};
-
-            // In a real app, you'd serialize the report objects fully. 
-            // Here we'll simulate or use keys from the response if available.
-            // For this demo, let's use what we know is in MatchResult
-
             const rows = [
-                { label: 'الاسم الكامل', val1: m.missing_person_name, val2: m.found_person_name },
-                { label: 'العمر التقريبي', val1: m.missing_report_age || 'غير محدد', val2: m.found_report_age || 'غير محدد' },
-                { label: 'الجنس', val1: m.missing_report_gender === 'M' ? 'ذكر' : 'أنثى', val2: m.found_report_gender === 'M' ? 'ذكر' : 'أنثى' },
-                { label: 'المنطقة', val1: m.missing_report_city || 'غير محدد', val2: m.found_report_city || 'غير محدد' },
+                { label: 'الاسم', val1: m.missing_person_name || '---', val2: m.found_person_name || '---' },
+                { label: 'العمر', val1: m.missing_report_age || '---', val2: m.found_report_age || '---' },
+                { label: 'الجنس', val1: m.missing_report_gender || '---', val2: m.found_report_gender || '---' },
+                { label: 'المنطقة', val1: m.missing_report_city || '---', val2: m.found_report_city || '---' },
             ];
 
             let html = '';
             rows.forEach(row => {
-                const isMatch = row.val1 === row.val2;
+                const isMatch = row.val1 === row.val2 && row.val1 !== '---';
                 html += `
                 <tr>
-                    <td>${row.val1}</td>
+                    <td class="${isMatch ? 'text-success fw-bold' : ''}">${row.val1}</td>
                     <td class="bg-light fw-bold">${row.label}</td>
-                    <td class="${isMatch ? 'text-success fw-bold' : ''}">${row.val2} ${isMatch ? '<i class="fas fa-check-circle ms-1"></i>' : ''}</td>
+                    <td class="${isMatch ? 'text-success fw-bold' : ''}">${row.val2} ${isMatch ? '<i class="fas fa-check-circle ms-1 text-success"></i>' : ''}</td>
                 </tr>
                 `;
             });
@@ -458,10 +527,10 @@
 
         window.updateMatchStatus = function (status) {
             if (!activeMatchId) return;
+            
             const notes = $('#review-notes').val();
-
             if (!notes || notes.length < 5) {
-                alert('عذراً، يجب كتابة سبب القرار (5 أحرف على الأقل) لإتمام العملية لأغراض التدقيق والحوكمة.');
+                alert('يرجى كتابة سبب القرار (5 أحرف على الأقل)');
                 return;
             }
 
@@ -473,21 +542,37 @@
                 headers: { 'X-CSRFToken': '{{ csrf_token }}' },
                 success: function (res) {
                     $('#matchCompareModal').modal('hide');
-                    loadMatches();
-                    Toast.fire({ icon: 'success', title: res.message || 'تم اتخاذ القرار بنجاح' });
+                    $('#matches-filter-form').submit();
+                    
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'تم بنجاح',
+                        text: res.message || 'تم تحديث حالة المطابقة',
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
                 },
                 error: function (xhr) {
-                    alert('خطأ في العملية: ' + (xhr.responseJSON?.message || xhr.responseJSON?.error || 'غير معروف'));
+                    let errorMsg = 'حدث خطأ في العملية';
+                    if (xhr.responseJSON) {
+                        if (xhr.responseJSON.error) errorMsg = xhr.responseJSON.error;
+                        else if (xhr.responseJSON.message) errorMsg = xhr.responseJSON.message;
+                    }
+                    alert(errorMsg);
                 }
             });
         };
 
-        // Utility Helpers
+        // دوال مساعدة
         function getStatusBadge(s) {
-            if (s === 'pending') return '<span class="badge bg-soft-warning text-warning fw-bold px-3">بانتظار المراجعة</span>';
-            if (s === 'accepted') return '<span class="badge bg-soft-success text-success fw-bold px-3">تم التأكيد</span>';
-            if (s === 'rejected') return '<span class="badge bg-soft-danger text-danger fw-bold px-3">مرفوض</span>';
-            return `<span class="badge bg-light text-muted">${s}</span>`;
+            const statusMap = {
+                'pending': '<span class="badge bg-warning">بانتظار المراجعة</span>',
+                'accepted': '<span class="badge bg-success">تم التأكيد</span>',
+                'rejected': '<span class="badge bg-danger">مرفوض</span>',
+                'false_positive': '<span class="badge bg-secondary">إيجابي خاطئ</span>',
+                'reviewing': '<span class="badge bg-info">قيد المراجعة</span>'
+            };
+            return statusMap[s] || `<span class="badge bg-light">${s}</span>`;
         }
 
         function getScoreColor(val) {
@@ -504,18 +589,12 @@
 
         function getConfidenceClass(lvl) {
             const classes = {
-                'very_high': '<span class="text-success small fw-bold"><i class="fas fa-shield-check me-1"></i>ثقة فائقة</span>',
-                'high': '<span class="text-success small fw-bold"><i class="fas fa-check-circle me-1"></i>ثقة عالية</span>',
-                'medium': '<span class="text-warning small fw-bold"><i class="fas fa-info-circle me-1"></i>ثقة متوسطة</span>',
-                'low': '<span class="text-danger small fw-bold"><i class="fas fa-exclamation-triangle me-1"></i>ثقة منخفضة</span>'
+                'very_high': '<span class="badge bg-success"><i class="fas fa-shield-check me-1"></i>ثقة فائقة</span>',
+                'high': '<span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>ثقة عالية</span>',
+                'medium': '<span class="badge bg-warning"><i class="fas fa-info-circle me-1"></i>ثقة متوسطة</span>',
+                'low': '<span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>ثقة منخفضة</span>'
             };
-            return classes[lvl] || lvl;
-        }
-
-        function getPriorityBadge(p) {
-            if (p === 'urgent') return '<span class="badge bg-danger rounded-pill shadow-xs" style="font-size: 0.65rem;">عاجل (أطفال)</span>';
-            if (p === 'high') return '<span class="badge bg-warning text-dark rounded-pill shadow-xs" style="font-size: 0.65rem;">مرتفع</span>';
-            return '<span class="badge bg-light text-muted rounded-pill shadow-xs" style="font-size: 0.65rem;">عادي</span>';
+            return classes[lvl] || '<span class="badge bg-secondary">غير محدد</span>';
         }
 
         function getConfidenceText(l) {
@@ -529,68 +608,39 @@
             return 'bg-danger';
         }
 
+        function getPriorityBadge(p) {
+            const map = {
+                'urgent': '<span class="badge bg-danger">عاجل</span>',
+                'high': '<span class="badge bg-warning">مرتفع</span>',
+                'normal': '<span class="badge bg-info">عادي</span>',
+                'low': '<span class="badge bg-secondary">منخفض</span>'
+            };
+            return map[p] || '<span class="badge bg-light">عادي</span>';
+        }
+
         function getPriorityText(p) {
-            const map = { 'urgent': 'أولوية عاجلة', 'high': 'أولوية مرتفعة', 'normal': 'أولوية عادية' };
+            const map = { 'urgent': 'أولوية عاجلة', 'high': 'أولوية مرتفعة', 'normal': 'أولوية عادية', 'low': 'أولوية منخفضة' };
             return map[p] || p;
         }
 
         function getPriorityBadgeClass(p) {
             if (p === 'urgent') return 'bg-danger';
             if (p === 'high') return 'bg-warning text-dark';
+            if (p === 'normal') return 'bg-info';
             return 'bg-secondary';
         }
 
-        const Toast = Swal.mixin({
-            toast: true,
-            position: 'top-end',
-            showConfirmButton: false,
-            timer: 3000
-        });
-
-        loadMatches();
+        // تحميل أولي
+        $('#matches-filter-form').submit();
     });
 </script>
 
 <style>
-    .bg-soft-success {
-        background-color: rgba(46, 204, 113, 0.1);
-    }
-
-    .bg-soft-warning {
-        background-color: rgba(241, 196, 15, 0.1);
-    }
-
-    .bg-soft-danger {
-        background-color: rgba(231, 76, 60, 0.1);
-    }
-
-    .bg-light-danger {
-        background-color: rgba(231, 76, 60, 0.03);
-    }
-
-    .bg-light-soft {
-        background-color: #f8f9fa;
-    }
-
-    .rounded-4 {
-        border-radius: 1rem !important;
-    }
-
-    .avatar-group img {
-        border: 2px solid #fff;
-    }
-
-    .table-hover tbody tr:hover {
-        background-color: rgba(0, 0, 0, .02);
-        cursor: pointer;
-    }
-
-    .btn-white {
-        background-color: #fff;
-    }
-
-    .border-light-dark {
-        border: 1px solid #e9ecef;
-    }
+    .bg-soft-success { background-color: rgba(46, 204, 113, 0.1); }
+    .bg-soft-warning { background-color: rgba(241, 196, 15, 0.1); }
+    .bg-soft-danger { background-color: rgba(231, 76, 60, 0.1); }
+    .bg-light-danger { background-color: rgba(231, 76, 60, 0.03); }
+    .rounded-4 { border-radius: 1rem !important; }
+    .avatar-group img { border: 2px solid #fff; }
 </style>
 {% endblock %}

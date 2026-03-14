@@ -9,16 +9,15 @@ router.register(r'performance-metrics', views.PerformanceMetricsViewSet, basenam
 router.register(r'reports', views.AnalyticsReportViewSet, basename='analytics-report')
 router.register(r'widgets', views.DashboardWidgetViewSet, basename='dashboard-widget')
 
-# مسارات API
+# مسارات API - موحدة بدون تكرار
 urlpatterns = [
     # تضمين مسارات router
     path('', include(router.urls)),
     
-    # مسارات إضافية
+    # مسارات إضافية - مسار واحد لكل وظيفة
     path('dashboard/', views.DashboardView.as_view(), name='dashboard'),
     path('generate-report/', views.GenerateReportView.as_view(), name='generate-report'),
-    path('overall-stats/', views.AnalyticsStatisticsView.as_view(), name='overall-stats'),
-    path('stats/', views.AnalyticsStatisticsView.as_view(), name='analytics-stats'),  # alias
+    path('stats/', views.AnalyticsStatisticsView.as_view(), name='analytics-stats'),  # مسار واحد فقط
 ]
 
 # تحديد اسم التطبيق للمسارات العكسية

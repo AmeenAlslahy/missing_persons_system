@@ -68,3 +68,82 @@ class Notification(models.Model):
             self.is_read = True
             self.read_at = timezone.now()
             self.save(update_fields=['is_read', 'read_at'])
+
+
+class NotificationPreference(models.Model):
+    """تفضيلات المستخدم للإشعارات"""
+    user = models.OneToOneField('accounts.User', on_delete=models.CASCADE, related_name='notification_preferences', verbose_name=_('المستخدم'))
+    
+    # قنوات الاتصال
+    email_enabled = models.BooleanField(_('البريد الإلكتروني'), default=True)
+    sms_enabled = models.BooleanField(_('الرسائل النصية'), default=False)
+    push_enabled = models.BooleanField(_('الإشعارات الدفعية'), default=True)
+    
+    # إعدادات حسب النوع
+    notify_match_found = models.BooleanField(_('اكتشاف تطابق'), default=True)
+    notify_report_status = models.BooleanField(_('تغيير حالة البلاغ'), default=True)
+    notify_verification = models.BooleanField(_('حالة التحقق'), default=True)
+    notify_system = models.BooleanField(_('تحديثات النظام'), default=True)
+    notify_admin = models.BooleanField(_('رسائل المشرفين'), default=True)
+    
+    # إعدادات الأولوية الدنيا لإشعارات البريد/SMS
+    min_priority = models.CharField(
+        _('الحد الأدنى للأولوية'), 
+        max_length=20, 
+        choices=Notification.PRIORITY_LEVELS,
+        default='normal'
+    )
+    
+    # أوقات عدم الإزعاج
+    quiet_hours_start = models.TimeField(_('بدء وقت الهدوء'), null=True, blank=True)
+    quiet_hours_end = models.TimeField(_('نهاية وقت الهدوء'), null=True, blank=True)
+    
+    updated_at = models.DateTimeField(_('تاريخ التحديث'), auto_now=True)
+    
+    class Meta:
+        verbose_name = _('تفضيلات الإشعارات')
+        verbose_name_plural = _('تفضيلات الإشعارات')
+    
+    def __str__(self):
+        return f"تفضيلات {self.user}"
+    
+    def is_quiet_hours(self):
+        """التحقق مما إذا كان الوقت الحالي ضمن ساعات الهدوء"""
+        if not self.quiet_hours_start or not self.quiet_hours_end:
+            return False
+        
+        from django.utils import timezone
+        now = timezone.now().time()
+        if self.quiet_hours_start < self.quiet_hours_end:
+            return self.quiet_hours_start <= now <= self.quiet_hours_end
+        else:
+            # عبر منتصف الليل
+            return now >= self.quiet_hours_start or now <= self.quiet_hours_end
+    
+    def should_notify(self, notification_type, priority):
+        """التحقق مما إذا كان يجب إرسال الإشعار"""
+        # التحقق من الأولوية
+        priority_levels = ['low', 'normal', 'high', 'urgent']
+        try:
+            min_priority_index = priority_levels.index(self.min_priority)
+            current_priority_index = priority_levels.index(priority)
+        except ValueError:
+            return True
+            
+        if current_priority_index < min_priority_index:
+            return False
+        
+        # التحقق من ساعات الهدوء (للإشعارات غير العاجلة)
+        if priority not in ['urgent', 'high'] and self.is_quiet_hours():
+            return False
+        
+        # التحقق من نوع الإشعار
+        type_map = {
+            'match_found': self.notify_match_found,
+            'report_status_change': self.notify_report_status,
+            'verification_status': self.notify_verification,
+            'system_update': self.notify_system,
+            'message_from_admin': self.notify_admin,
+        }
+        
+        return type_map.get(notification_type, True)

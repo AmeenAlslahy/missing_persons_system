@@ -23,9 +23,8 @@ urlpatterns = [
     path('otp/verify/', views.VerifyOTPView.as_view(), name='otp-verify'),
     path('verify/request/', views.VerificationRequestView.as_view(), name='verification-request'),
     
-    # API endpoints (مضمنة في router)
+    # API endpoints
     path('', include(router.urls)),
 ]
 
-# إضافة أسماء مسارات واضحة للتوجيه العكسي
 app_name = 'accounts'

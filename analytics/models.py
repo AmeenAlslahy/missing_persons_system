@@ -5,7 +5,8 @@ from accounts.models import User
 from reports.models import Report
 from matching.models import MatchResult
 import uuid
-from django.db.models import Q  # إضافة هذا السطر المفقود
+from django.db.models import Q
+from datetime import timedelta
 
 
 class DailyStats(models.Model):
@@ -68,21 +69,21 @@ class DailyStats(models.Model):
     
     @classmethod
     def get_or_create_today(cls):
-        """الحصول على إحصائيات اليوم أو إنشاؤها"""
+        """الحصول على إحصائيات اليوم أو إنشاؤها - محسنة"""
         today = timezone.now().date()
-        stats, created = cls.objects.get_or_create(date=today)
         
-        if created:
-            # حساب الإحصائيات الأولية بدون save() إضافي
+        try:
+            stats = cls.objects.get(date=today)
+            return stats
+        except cls.DoesNotExist:
+            # إنشاء إحصائية جديدة وحسابها مرة واحدة فقط
+            stats = cls(date=today)
             stats._calculate_initial_stats()
-            stats.save()  # save مرة واحدة فقط
-        
-        return stats
+            stats.save()
+            return stats
     
     def _calculate_initial_stats(self):
         """حساب الإحصائيات الأولية (للإحصائية الجديدة فقط)"""
-        from datetime import timedelta
-        
         stats_date = self.date
         start_date = stats_date
         end_date = stats_date + timedelta(days=1)
@@ -93,7 +94,7 @@ class DailyStats(models.Model):
         
         thirty_days_ago = timezone.now() - timedelta(days=30)
         self.active_users = User.objects.filter(last_login__gte=thirty_days_ago).count()
-        self.verified_users = User.objects.filter(verification_status='verified').count()
+        self.verified_users = User.objects.filter(verified_users=True).count() if hasattr(User, 'verified_users') else User.objects.filter(verification_status='verified').count()
         
         # البلاغات
         self.total_reports = Report.objects.count()
@@ -146,11 +147,17 @@ class DailyStats(models.Model):
         elif self.total_reports > 0:
             self.match_success_rate = (self.resolved_reports / self.total_reports) * 100
     
-    def calculate_stats(self):
-        """إعادة حساب الإحصائيات (للتحديث)"""
-        # هذا مشابه لـ _calculate_initial_stats ولكن يمكن إضافته عند الحاجة
+    def refresh_stats(self):
+        """إعادة حساب الإحصائيات (للتحديث اليدوي)"""
         self._calculate_initial_stats()
-        self.save()
+        self.save(update_fields=[
+            'total_users', 'new_users', 'active_users', 'verified_users',
+            'total_reports', 'new_reports', 'missing_reports', 'found_reports',
+            'resolved_reports', 'pending_review_reports', 'resolved_today',
+            'resolved_this_week', 'resolved_this_month', 'avg_resolution_time',
+            'total_matches', 'new_matches', 'accepted_matches', 'false_positive_matches',
+            'match_success_rate'
+        ])
 
 
 class PerformanceMetric(models.Model):

@@ -65,7 +65,7 @@ class DailyStatsViewSet(viewsets.ReadOnlyModelViewSet):
     
     @action(detail=False, methods=['get'])
     def summary(self, request):
-        """ملخص الإحصائيات"""
+        """ملخص الإحصائيات مع مقارنة محسنة"""
         # الحصول على إحصائيات اليوم
         today_stats = DailyStats.get_or_create_today()
         
@@ -83,29 +83,37 @@ class DailyStatsViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(data)
     
     def _calculate_comparison(self, today_stats, yesterday_stats):
-        """حساب المقارنة بين اليوم والأمس"""
+        """حساب المقارنة بين اليوم والأمس - محسنة وآمنة"""
         if not today_stats or not yesterday_stats:
             return {}
         
         comparisons = {}
         
-        # مقارنة البلاغات الجديدة
-        if yesterday_stats.new_reports > 0:
-            reports_change = ((today_stats.new_reports - yesterday_stats.new_reports) / yesterday_stats.new_reports) * 100
-            comparisons['reports_change'] = round(reports_change, 1)
-            comparisons['reports_trend'] = 'up' if reports_change > 0 else 'down'
+        # دوال مساعدة للحساب الآمن
+        def safe_calc(today_val, yesterday_val, key):
+            if yesterday_val > 0:
+                change = ((today_val - yesterday_val) / yesterday_val) * 100
+                comparisons[f'{key}_change'] = round(change, 1)
+                comparisons[f'{key}_trend'] = 'up' if change > 0 else 'down'
         
-        # مقارنة المطابقات الجديدة
-        if yesterday_stats.new_matches > 0:
-            matches_change = ((today_stats.new_matches - yesterday_stats.new_matches) / yesterday_stats.new_matches) * 100
-            comparisons['matches_change'] = round(matches_change, 1)
-            comparisons['matches_trend'] = 'up' if matches_change > 0 else 'down'
+        # استخدام getattr مع قيم افتراضية آمنة
+        safe_calc(
+            getattr(today_stats, 'new_reports', 0),
+            getattr(yesterday_stats, 'new_reports', 0),
+            'reports'
+        )
         
-        # مقارنة المستخدمين الجدد
-        if yesterday_stats.new_users > 0:
-            users_change = ((today_stats.new_users - yesterday_stats.new_users) / yesterday_stats.new_users) * 100
-            comparisons['users_change'] = round(users_change, 1)
-            comparisons['users_trend'] = 'up' if users_change > 0 else 'down'
+        safe_calc(
+            getattr(today_stats, 'new_matches', 0),
+            getattr(yesterday_stats, 'new_matches', 0),
+            'matches'
+        )
+        
+        safe_calc(
+            getattr(today_stats, 'new_users', 0),
+            getattr(yesterday_stats, 'new_users', 0),
+            'users'
+        )
         
         return comparisons
 
@@ -189,7 +197,7 @@ class AnalyticsReportViewSet(viewsets.ModelViewSet):
             # المشرف يرى كل التقارير
             queryset = AnalyticsReport.objects.all()
         else:
-            # المستخدم العادي يرى التقارير العامة فقط
+            # للمستخدمين العاديين: استخدام استعلام محسن
             queryset = AnalyticsReport.objects.filter(
                 Q(is_public=True) | Q(allowed_users=user)
             ).distinct()
@@ -262,17 +270,26 @@ class DashboardWidgetViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        """تصفية العناصر بناءً على صلاحيات المستخدم"""
+        """تصفية العناصر بناءً على صلاحيات المستخدم - محسنة"""
         user = self.request.user
         
-        # الحصول على دور المستخدم
-        user_role = user.user_type
+        # الأساس: العناصر النشطة فقط
+        queryset = DashboardWidget.objects.filter(is_active=True)
         
-        # العناصر العامة + العناصر الخاصة بدور المستخدم
-        queryset = DashboardWidget.objects.filter(
-            Q(is_public=True) | 
-            Q(allowed_roles__contains=[user_role])
-        ).filter(is_active=True).distinct()
+        if not user.is_staff:
+            # للمستخدمين العاديين: عناصر عامة فقط
+            queryset = queryset.filter(is_public=True)
+            
+            # فلترة حسب allowed_roles إن وجدت
+            # استخدام exclude بدلاً من contains للكفاءة
+            user_role = user.user_type
+            
+            # عناصر بدون allowed_roles أو تحتوي على دور المستخدم
+            queryset = queryset.filter(
+                Q(allowed_roles__isnull=True) | 
+                Q(allowed_roles=[]) |
+                Q(allowed_roles__contains=[user_role])
+            )
         
         return queryset.order_by('column', 'row', 'order')
     
@@ -284,10 +301,15 @@ class DashboardWidgetViewSet(viewsets.ModelViewSet):
             permission_classes = [IsAuthenticated]
         
         return [permission() for permission in permission_classes]
+    
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
 
 
 class DashboardView(APIView):
-    """لوحة التحكم الرئيسية"""
+    """لوحة التحكم الرئيسية - محسنة مع استخدام الخدمة"""
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
@@ -295,20 +317,27 @@ class DashboardView(APIView):
         user = request.user
         
         try:
+            # استخدام خدمة analytics للحصول على الإحصائيات الموحدة
+            service = AnalyticsService()
+            dashboard_stats = service.get_dashboard_stats(user)
+            
             # الحصول على عناصر لوحة التحكم المناسبة للمستخدم
             if user.is_staff:
                 widgets = DashboardWidget.objects.filter(is_active=True).order_by('column', 'row', 'order')
             else:
-                widgets = DashboardWidget.objects.filter(is_public=True, is_active=True).order_by('column', 'row', 'order')
+                widgets = DashboardWidget.objects.filter(
+                    is_public=True, 
+                    is_active=True
+                ).order_by('column', 'row', 'order')
             
-            # الحصول على إحصائيات اليوم
-            daily_stats = DailyStats.get_or_create_today()
-
             # الحصول على مقاييس الأداء
             if user.is_staff:
                 metrics = PerformanceMetric.objects.filter(is_active=True)
             else:
-                metrics = PerformanceMetric.objects.filter(is_active=True, category__in=['system', 'user'])
+                metrics = PerformanceMetric.objects.filter(
+                    is_active=True, 
+                    category__in=['system', 'user']
+                )
 
             # الحصول على التقارير الأخيرة
             if user.is_staff:
@@ -318,71 +347,21 @@ class DashboardView(APIView):
                     Q(is_public=True) | Q(allowed_users=user)
                 ).distinct().order_by('-generated_at')[:5]
 
-            # إضافة بيانات إضافية للمخططات
-            enhanced_daily_stats = DailyStatsSerializer(daily_stats).data if daily_stats else {}
-
-            # إضافة بيانات حية
-            total_reports_count = Report.objects.count()
-            active_reports_count = Report.objects.filter(status='active').count()
-            pending_reports_count = Report.objects.filter(status='pending').count()
-            resolved_reports_count = Report.objects.filter(status='resolved').count()
-
-            enhanced_daily_stats['total_reports'] = total_reports_count
-            enhanced_daily_stats['active_reports'] = active_reports_count
-            enhanced_daily_stats['pending_review_reports'] = pending_reports_count
-            enhanced_daily_stats['resolved_reports'] = resolved_reports_count
-
-            # إضافة بيانات المناطق الجغرافية
-            top_cities = Report.objects.filter(lost_governorate__isnull=False).values('lost_governorate__name_ar').annotate(
-                count=Count('report_id')
-            ).order_by('-count')[:10]
+            # دمج الإحصائيات من الخدمة مع البيانات الأخرى
+            enhanced_daily_stats = dashboard_stats.get('daily', {})
             
-            enhanced_daily_stats['top_cities'] = [
-                {'city': item['lost_governorate__name_ar'], 'count': item['count']}
-                for item in top_cities
-            ]
+            # إضافة بيانات إضافية
+            enhanced_daily_stats.update({
+                'total_reports': dashboard_stats.get('reports', {}).get('total', 0),
+                'active_reports': dashboard_stats.get('reports', {}).get('active', 0),
+                'pending_review_reports': dashboard_stats.get('reports', {}).get('pending', 0),
+                'resolved_reports': dashboard_stats.get('reports', {}).get('resolved', 0),
+                'total_matches': dashboard_stats.get('matching', {}).get('total_matches', 0),
+            })
 
-            # حساب إحصائيات المطابقة والحل في الوقت الحقيقي
-            total_matches = MatchResult.objects.count()
-            enhanced_daily_stats['total_matches'] = total_matches
-            
-            total_accepted = MatchResult.objects.filter(match_status='accepted').count()
-            total_reviewed = MatchResult.objects.filter(
-                match_status__in=['accepted', 'rejected', 'false_positive']
-            ).count()
-            
-            if total_reviewed > 0:
-                match_success_rate = (total_accepted / total_reviewed) * 100
-            else:
-                total_reports = Report.objects.count()
-                if total_reports > 0:
-                    match_success_rate = (resolved_reports_count / total_reports) * 100
-                else:
-                    match_success_rate = 0.0
-            enhanced_daily_stats['match_success_rate'] = match_success_rate
-
-            # إحصائيات الحل الزمنية
-            today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            week_start = today_start - timedelta(days=7)
-            
-            resolved_today = Report.objects.filter(status='resolved', updated_at__gte=today_start).count()
-            resolved_this_week = Report.objects.filter(status='resolved', updated_at__gte=week_start).count()
-            
-            enhanced_daily_stats['resolved_today'] = resolved_today
-            enhanced_daily_stats['resolved_this_week'] = resolved_this_week
-
-            # متوسط زمن الحل
-            resolved_with_time = Report.objects.filter(
-                status='resolved', created_at__isnull=False, updated_at__isnull=False
-            )
-            avg_time = 0.0
-            if resolved_with_time.exists():
-                total_hours = sum(
-                    [(r.updated_at - r.created_at).total_seconds() / 3600 for r in resolved_with_time]
-                )
-                avg_time = total_hours / resolved_with_time.count()
-            
-            enhanced_daily_stats['avg_resolution_time'] = round(avg_time, 1)
+            # إضافة بيانات المناطق الجغرافية (مخزنة في كاش)
+            top_cities = self._get_top_cities_cached()
+            enhanced_daily_stats['top_cities'] = top_cities
 
             data = {
                 'widgets': DashboardWidgetSerializer(widgets, many=True, context={'request': request}).data,
@@ -401,6 +380,33 @@ class DashboardView(APIView):
                 {'error': 'حدث خطأ في تحميل بيانات لوحة التحكم'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    def _get_top_cities_cached(self):
+        """الحصول على أهم المدن مع كاش"""
+        from django.core.cache import cache
+        
+        cache_key = 'analytics_top_cities'
+        cached = cache.get(cache_key)
+        
+        if cached is not None:
+            return cached
+        
+        # حساب البيانات
+        top_cities = Report.objects.filter(
+            lost_governorate__isnull=False
+        ).values('lost_governorate__name_ar').annotate(
+            count=Count('report_id')
+        ).order_by('-count')[:10]
+        
+        result = [
+            {'city': item['lost_governorate__name_ar'], 'count': item['count']}
+            for item in top_cities
+        ]
+        
+        # تخزين في كاش لمدة ساعة
+        cache.set(cache_key, result, 3600)
+        
+        return result
 
 
 class GenerateReportView(APIView):
@@ -447,71 +453,73 @@ class GenerateReportView(APIView):
 
 
 class AnalyticsStatisticsView(APIView):
-    """إحصائيات التحليلات العامة"""
+    """إحصائيات التحليلات العامة - محسنة"""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
-
+        
         # استخدام خدمة التحليلات
         service = AnalyticsService()
-
-        # إحصائيات أساسية
-        stats = {
-            'system': {
-                'total_reports': 0,
-                'total_matches': 0,
-                'total_users': 0,
-                'match_success_rate': 0,
-                'resolution_rate': 0,
-            },
-            'trends': {
-                'reports_trend': 'stable',
-                'matches_trend': 'stable',
-                'users_trend': 'stable',
-            }
-        }
-
+        
         try:
-            # الحصول على إحصائيات هذا الشهر
+            # استخدام service.get_dashboard_stats() بدلاً من الحساب المكرر
+            dashboard_stats = service.get_dashboard_stats(user)
+            
+            # إحصائيات أساسية
+            stats = {
+                'system': {
+                    'total_reports': dashboard_stats.get('reports', {}).get('total', 0),
+                    'active_reports': dashboard_stats.get('reports', {}).get('active', 0),
+                    'this_month_reports': 0,  # سيتم حسابه لاحقاً
+                    'total_matches': dashboard_stats.get('matching', {}).get('total_matches', 0),
+                    'this_month_matches': 0,  # سيتم حسابه لاحقاً
+                    'total_users': dashboard_stats.get('users', {}).get('total', 0),
+                    'this_month_users': 0,  # سيتم حسابه لاحقاً
+                    'match_success_rate': dashboard_stats.get('daily', {}).get('match_success_rate', 0),
+                    'resolution_rate': service._calculate_resolution_rate(),
+                },
+                'trends': {
+                    'reports_trend': 'stable',
+                    'matches_trend': 'stable',
+                    'users_trend': 'stable',
+                }
+            }
+            
+            # حساب إحصائيات هذا الشهر
             start_of_month = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-            # حساب الإحصائيات الصحيحة
-            total_reports = Report.objects.count()
-            active_reports = Report.objects.filter(status='active').count()
-            total_matches = MatchResult.objects.count()
-
-            stats['system'].update({
-                'total_reports': total_reports,
-                'active_reports': active_reports,
-                'this_month_reports': Report.objects.filter(created_at__gte=start_of_month).count(),
-                'total_matches': total_matches,
-                'this_month_matches': MatchResult.objects.filter(detected_at__gte=start_of_month).count(),
-                'total_users': User.objects.count(),
-                'this_month_users': User.objects.filter(date_joined__gte=start_of_month).count(),
-                'match_success_rate': service._calculate_match_success_rate(),
-                'resolution_rate': service._calculate_resolution_rate(),
-            })
-
-            # تحليل الاتجاهات
-            last_30_days_stats = DailyStats.objects.filter(
-                date__gte=timezone.now().date() - timedelta(days=30)
-            ).order_by('date')
-
-            if last_30_days_stats:
-                stats['trends']['reports_trend'] = service.analyze_trend([s.new_reports for s in last_30_days_stats])
-                stats['trends']['matches_trend'] = service.analyze_trend([s.new_matches for s in last_30_days_stats])
-                stats['trends']['users_trend'] = service.analyze_trend([s.new_users for s in last_30_days_stats])
+            stats['system']['this_month_reports'] = Report.objects.filter(created_at__gte=start_of_month).count()
+            stats['system']['this_month_matches'] = MatchResult.objects.filter(detected_at__gte=start_of_month).count()
+            stats['system']['this_month_users'] = User.objects.filter(date_joined__gte=start_of_month).count()
+            
+            # تحليل الاتجاهات - فقط للمشرفين لتوفير الأداء
+            if user.is_staff:
+                last_30_days_stats = DailyStats.objects.filter(
+                    date__gte=timezone.now().date() - timedelta(days=30)
+                ).order_by('date')
                 
-                trends_insights = service._generate_performance_insights(last_30_days_stats)
-                stats['insights'] = trends_insights
-
-            # بيانات إضافية للمخططات
+                if last_30_days_stats.exists():
+                    stats['trends']['reports_trend'] = service.analyze_trend(
+                        [s.new_reports for s in last_30_days_stats]
+                    )
+                    stats['trends']['matches_trend'] = service.analyze_trend(
+                        [s.new_matches for s in last_30_days_stats]
+                    )
+                    stats['trends']['users_trend'] = service.analyze_trend(
+                        [s.new_users for s in last_30_days_stats]
+                    )
+                    
+                    stats['insights'] = service._generate_performance_insights(last_30_days_stats)
+            
+            # بيانات إضافية - مخزنة في الكاش
             stats['user_trust'] = service.get_user_trust_distribution()
             stats['demographics'] = service.get_report_demographics()
-
+            
         except Exception as e:
             logger.error(f"خطأ في AnalyticsStatisticsView: {e}")
-            stats['error'] = 'حدث خطأ في تحميل الإحصائيات'
-
+            return Response(
+                {'error': 'حدث خطأ في تحميل الإحصائيات'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
         return Response(stats)

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Notification
+from .models import Notification, NotificationPreference
 from django.utils.translation import gettext_lazy as _
 
 
@@ -17,15 +17,38 @@ class NotificationAdmin(admin.ModelAdmin):
             'fields': ('notification_id', 'user', 'notification_type', 'title', 'message')
         }),
         ('الأولوية والحالة', {
-            'fields': ('priority_level', 'is_read')
+            'fields': ('priority_level', 'is_read', 'read_at')
         }),
         ('الارتباطات', {
-            'fields': ('report_1', 'report_2')
+            'fields': ('related_report', 'related_match')
         }),
-        ('الصلاحية', {
-            'fields': ('expires_at',)
+        ('الإجراءات', {
+            'fields': ('action_required', 'action_url', 'action_text')
         }),
-        ('التواريخ', {
-            'fields': ('created_at',)
+        ('البيانات الفنية', {
+            'fields': ('metadata', 'expires_at', 'created_at')
+        }),
+    )
+
+
+@admin.register(NotificationPreference)
+class NotificationPreferenceAdmin(admin.ModelAdmin):
+    list_display = ['user', 'email_enabled', 'push_enabled', 'sms_enabled', 'updated_at']
+    list_filter = ['email_enabled', 'push_enabled', 'sms_enabled', 'updated_at']
+    search_fields = ['user__phone', 'user__email']
+    
+    fieldsets = (
+        ('المستخدم', {
+            'fields': ('user',)
+        }),
+        ('القنوات المفعلة', {
+            'fields': ('email_enabled', 'push_enabled', 'sms_enabled')
+        }),
+        ('تنبيهات الأحداث', {
+            'fields': ('notify_match_found', 'notify_report_status', 'notify_verification', 
+                       'notify_system', 'notify_admin')
+        }),
+        ('إعدادات أخرى', {
+            'fields': ('min_priority', 'quiet_hours_start', 'quiet_hours_end')
         }),
     )

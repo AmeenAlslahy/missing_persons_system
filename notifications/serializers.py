@@ -2,7 +2,19 @@ from rest_framework import serializers
 from django.utils import timezone
 from django.utils.timesince import timesince
 from django.utils.translation import gettext_lazy as _
-from .models import Notification
+from .models import Notification, NotificationPreference
+
+
+class NotificationPreferenceSerializer(serializers.ModelSerializer):
+    """سرياليزر لتفضيلات الإشعارات"""
+    class Meta:
+        model = NotificationPreference
+        fields = [
+            'email_enabled', 'sms_enabled', 'push_enabled',
+            'notify_match_found', 'notify_report_status', 
+            'notify_verification', 'notify_system', 'notify_admin',
+            'min_priority', 'quiet_hours_start', 'quiet_hours_end'
+        ]
 
 
 class NotificationSerializer(serializers.ModelSerializer):

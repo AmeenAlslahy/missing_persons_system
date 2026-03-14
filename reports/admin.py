@@ -7,20 +7,23 @@ from .models import Person, Report, ReportImage
 class ReportImageInline(admin.TabularInline):
     model = ReportImage
     extra = 0
-    fields = ['image_preview', 'quality_score']
-    readonly_fields = ['image_preview', 'quality_score']
+    fields = ['image_preview', 'quality_score', 'upload_at']
+    readonly_fields = ['image_preview', 'quality_score', 'upload_at']
     
     def image_preview(self, obj):
         if obj.image_path:
-            return format_html('<img src="{}" style="max-height: 50px; max-width: 50px;" />', obj.image_path.url)
+            return format_html(
+                '<img src="{}" style="max-height: 50px; max-width: 50px; border-radius: 4px;" />',
+                obj.image_path.url
+            )
         return "-"
     image_preview.short_description = _('معاينة')
 
 
 @admin.register(Person)
 class PersonAdmin(admin.ModelAdmin):
-    list_display = ['full_name', 'gender', 'age', 'blood_type', 'created_at']
-    list_filter = ['gender', 'blood_type', 'created_at']
+    list_display = ['full_name', 'gender', 'age', 'created_at']
+    list_filter = ['gender', 'created_at']
     search_fields = ['first_name', 'middle_name', 'last_name']
     readonly_fields = ['person_id', 'created_at', 'updated_at', 'age']
     
@@ -31,7 +34,7 @@ class PersonAdmin(admin.ModelAdmin):
         (_('المعلومات الأساسية'), {
             'fields': ('date_of_birth', 'gender', 'blood_type')
         }),
-        (_('الصفات الثابتة'), {
+        (_('الصفات'), {
             'fields': ('chronic_conditions', 'permanent_marks')
         }),
         (_('موقع السكن'), {
@@ -52,8 +55,8 @@ class ReportAdmin(admin.ModelAdmin):
     list_display = ['report_code', 'person_name', 'report_type', 'status', 
                    'importance', 'lost_governorate', 'created_at']
     list_filter = ['report_type', 'status', 'importance', 'created_at']
-    search_fields = ['report_code', 'person__first_name', 'person__last_name', 'contact_phone']
-    readonly_fields = ['report_id', 'report_code', 'created_at', 'updated_at', 'resolved_at', 'age_at_loss']
+    search_fields = ['report_code', 'person__first_name', 'person__last_name']
+    readonly_fields = ['report_id', 'report_code', 'created_at', 'updated_at', 'resolved_at']
     autocomplete_fields = ['person', 'user', 'lost_governorate', 'lost_district']
     inlines = [ReportImageInline]
     
@@ -61,13 +64,13 @@ class ReportAdmin(admin.ModelAdmin):
         (_('معلومات البلاغ'), {
             'fields': ('report_id', 'report_code', 'user', 'person', 'report_type')
         }),
-        (_('موقع الفقدان/العثور'), {
+        (_('الموقع'), {
             'fields': ('lost_governorate', 'lost_district', 'lost_uzlah', 'lost_location_details')
         }),
-        (_('تاريخ ووقت آخر مشاهدة/عثور'), {
+        (_('آخر مشاهدة'), {
             'fields': ('last_seen_date', 'last_seen_time')
         }),
-        (_('حالة وقت الفقدان/العثور'), {
+        (_('الوصف'), {
             'fields': ('health_at_loss', 'medications', 'clothing_description', 'possessions')
         }),
         (_('الاتصال'), {
@@ -77,7 +80,7 @@ class ReportAdmin(admin.ModelAdmin):
             'fields': ('status', 'importance', 'close_reason')
         }),
         (_('تواريخ'), {
-            'fields': ('created_at', 'updated_at', 'resolved_at', 'age_at_loss')
+            'fields': ('created_at', 'updated_at', 'resolved_at')
         }),
     )
     
@@ -86,9 +89,17 @@ class ReportAdmin(admin.ModelAdmin):
     person_name.short_description = _('اسم الشخص')
     person_name.admin_order_field = 'person__first_name'
     
-    def age_at_loss(self, obj):
-        return obj.age_at_loss
-    age_at_loss.short_description = _('العمر وقت الفقدان')
+    actions = ['approve_reports', 'reject_reports']
+    
+    def approve_reports(self, request, queryset):
+        updated = queryset.update(status='active')
+        self.message_user(request, _('تمت الموافقة على %d بلاغ') % updated)
+    approve_reports.short_description = _('موافقة على البلاغات المحددة')
+    
+    def reject_reports(self, request, queryset):
+        updated = queryset.update(status='rejected')
+        self.message_user(request, _('تم رفض %d بلاغ') % updated)
+    reject_reports.short_description = _('رفض البلاغات المحددة')
 
 
 @admin.register(ReportImage)
@@ -98,6 +109,9 @@ class ReportImageAdmin(admin.ModelAdmin):
     
     def image_preview(self, obj):
         if obj.image_path:
-            return format_html('<img src="{}" style="max-height: 100px; max-width: 100px;" />', obj.image_path.url)
+            return format_html(
+                '<img src="{}" style="max-height: 100px; max-width: 100px; border-radius: 4px;" />',
+                obj.image_path.url
+            )
         return "-"
     image_preview.short_description = _('معاينة')

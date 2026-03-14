@@ -17,13 +17,13 @@
     <div class="col-lg-5">
         <div class="card stat-card h-100">
             <div class="card-header bg-white py-3 border-0">
-                <h6 class="mb-0 fw-bold underline-title">إرسال تنبيه جديد</h6>
+                <h6 class="mb-0 fw-bold">إرسال تنبيه جديد</h6>
             </div>
             <div class="card-body">
                 <form id="broadcast-form">
                     <div class="mb-3">
                         <label class="form-label small fw-bold">نوع التنبيه</label>
-                        <select name="notification_type" class="form-select" id="n-type">
+                        <select name="notification_type" class="form-select" id="n-type" required>
                             <option value="urgent_alert">تنبيه طوارئ عاجل</option>
                             <option value="system_update">تحديث نظام وقوانين</option>
                             <option value="message_from_admin">رسالة إدارية عامة</option>
@@ -52,14 +52,22 @@
                     <div class="mb-3">
                         <label class="form-label small fw-bold">عنوان الإشعار</label>
                         <input type="text" name="title" class="form-control"
-                            placeholder="أدخل عنواناً جذاباً وقصيراً..." required>
+                            placeholder="أدخل عنواناً جذاباً وقصيراً..." required maxlength="200">
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-bold">نص الرسالة</label>
                         <textarea name="message" class="form-control" rows="4" placeholder="اكتب تفاصيل الإشعار هنا..."
-                            required></textarea>
+                            required maxlength="1000"></textarea>
                     </div>
-                    <div class="collapse" id="extra-options">
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="action-required-checkbox">
+                            <label class="form-check-label" for="action-required-checkbox">
+                                يتطلب إجراء من المستخدم
+                            </label>
+                        </div>
+                    </div>
+                    <div id="extra-options" style="display: none;">
                         <div class="mb-3">
                             <label class="form-label small fw-bold">رابط الإجراء (Action URL)</label>
                             <input type="url" name="action_url" class="form-control" placeholder="https://...">
@@ -70,12 +78,12 @@
                                 placeholder="مثلاً: عرض التفاصيل">
                         </div>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">مدة الصلاحية (أيام)</label>
+                        <input type="number" name="expiry_days" class="form-control" value="7" min="1" max="90">
+                    </div>
                     <div class="d-flex justify-content-between align-items-center mt-4">
-                        <button type="button" class="btn btn-link btn-sm text-decoration-none" data-bs-toggle="collapse"
-                            data-bs-target="#extra-options">
-                            خيارات إضافية <i class="fas fa-chevron-down ms-1"></i>
-                        </button>
-                        <button type="submit" class="btn btn-danger px-4 fw-bold shadow-sm">
+                        <button type="submit" class="btn btn-danger px-4 fw-bold shadow-sm w-100">
                             <i class="fas fa-paper-plane me-2"></i> بث الإشعار للجميع
                         </button>
                     </div>
@@ -88,7 +96,9 @@
         <div class="card stat-card h-100">
             <div class="card-header bg-white py-3 border-0 d-flex justify-content-between align-items-center">
                 <h6 class="mb-0 fw-bold">سجل التنبيهات الأخيرة</h6>
-                <button class="btn btn-sm btn-outline-secondary" onclick="loadHistory()">تحديث</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadHistory()">
+                    <i class="fas fa-sync-alt me-1"></i> تحديث
+                </button>
             </div>
             <div class="table-responsive">
                 <table class="table table-hover align-middle small">
@@ -102,7 +112,11 @@
                         </tr>
                     </thead>
                     <tbody id="history-table-body">
-                        <!-- Data via AJAX -->
+                        <tr>
+                            <td colspan="5" class="text-center py-4">
+                                <div class="spinner-border text-primary spinner-border-sm me-2"></div> جاري التحميل...
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -151,63 +165,190 @@
         </div>
     </div>
 </div>
+ 
+<!-- مودال تفاصيل الإشعار -->
+<div class="modal fade" id="notificationDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-0 bg-light">
+                <h6 class="modal-title fw-bold" id="detail-title">تفاصيل الإشعار</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <span class="badge mb-2" id="detail-type-badge">نوع غير معروف</span>
+                        <span class="badge" id="detail-priority-badge">أولوية</span>
+                    </div>
+                    <small class="text-muted" id="detail-date"></small>
+                </div>
+                <h5 class="fw-bold mb-3" id="detail-main-title"></h5>
+                <p class="text-secondary overflow-auto" id="detail-message" style="max-height: 200px; white-space: pre-wrap;"></p>
+                
+                <div id="detail-action-container" class="mt-4 p-3 border rounded bg-light" style="display: none;">
+                    <h6 class="small fw-bold mb-2">إجراء مطلوب:</h6>
+                    <a href="#" id="detail-action-link" class="btn btn-primary btn-sm w-100" target="_blank"></a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
     $(document).ready(function () {
+        // إظهار/إخفاء الخيارات الإضافية
+        $('#action-required-checkbox').change(function () {
+            if ($(this).is(':checked')) {
+                $('#extra-options').slideDown();
+            } else {
+                $('#extra-options').slideUp();
+            }
+        });
+
         function loadHistory() {
-            $.get('/api/notifications/admin/notifications/', function (res) {
-                renderHistory(res.results);
+            $.ajax({
+                url: '/api/notifications/notifications/',
+                method: 'GET',
+                data: { limit: 10 },
+                success: function (response) {
+                    renderHistory(response.results || []);
+                },
+                error: function (xhr) {
+                    console.error('Error loading notification history:', xhr);
+                    $('#history-table-body').html('<tr><td colspan="5" class="text-center py-4 text-danger">حدث خطأ في تحميل البيانات</td></tr>');
+                }
             });
 
-            $.get('/api/notifications/admin/notifications/stats/', function (res) {
-                $('#stat-total').text(res.total_notifications);
-                $('#stat-urgent').text(res.urgent_notifications);
-                const readPercent = res.total_notifications > 0 ? ((res.total_notifications - res.unread_notifications) / res.total_notifications * 100).toFixed(1) : 0;
-                $('#stat-read').text(readPercent + '%');
+            // تحميل الإحصائيات
+            $.ajax({
+                url: '/api/notifications/stats/',
+                method: 'GET',
+                success: function (res) {
+                    $('#stat-total').text(res.total || 0);
+                    $('#stat-urgent').text(res.urgent_unread || 0);
+                    
+                    let readPercent = res.total > 0 ? ((res.total - res.unread) / res.total * 100).toFixed(1) : 0;
+                    $('#stat-read').text(readPercent + '%');
+                },
+                error: function (xhr) {
+                    console.error('Error loading notification stats:', xhr);
+                }
             });
         }
 
         function renderHistory(data) {
-            let html = '';
-            const seen = new Set(); // منع التكرار
-            data.forEach(item => {
-                // تخطي الإشعارات المكررة
-                if (seen.has(item.notification_id)) return;
-                seen.add(item.notification_id);
+            if (!data || data.length === 0) {
+                $('#history-table-body').html('<tr><td colspan="5" class="text-center py-4 text-muted">لا توجد تنبيهات سابقة</td></tr>');
+                return;
+            }
 
-                const priorityClass = item.priority_level === 'urgent' ? 'bg-danger' : (item.priority_level === 'high' ? 'bg-warning' : 'bg-primary');
+            let html = '';
+            data.forEach(item => {
+                const priorityClass = item.priority_level === 'urgent' ? 'bg-danger' : 
+                                     (item.priority_level === 'high' ? 'bg-warning' : 
+                                     (item.priority_level === 'normal' ? 'bg-primary' : 'bg-secondary'));
+                
+                const typeMap = {
+                    'urgent_alert': 'طوارئ',
+                    'system_update': 'تحديث نظام',
+                    'message_from_admin': 'رسالة إدارية'
+                };
+                
+                const readClass = item.is_read ? 'text-success' : 'text-muted';
+                const readIcon = item.is_read ? 'fa-check-double' : 'fa-check';
+
                 html += `
-                <tr data-notification-id="${item.notification_id}">
+                <tr class="clickable-row notification-item" data-id="${item.notification_id}" style="cursor: pointer;">
                     <td>
-                        <div class="fw-bold">${item.title}</div>
-                        <div class="text-muted text-truncate" style="max-width: 200px;">${item.message}</div>
+                        <div class="fw-bold">${item.title || '---'}</div>
+                        <div class="text-muted text-truncate" style="max-width: 200px;">${item.message || ''}</div>
                     </td>
-                    <td><small>${item.notification_type}</small></td>
-                    <td><span class="badge ${priorityClass}">${item.priority_level}</span></td>
-                    <td>${new Date(item.created_at).toLocaleDateString('ar-SA')}</td>
-                    <td><i class="fas ${item.is_read ? 'fa-check-double text-success' : 'fa-check text-muted'}"></i></td>
+                    <td><span class="badge bg-secondary">${typeMap[item.notification_type] || item.notification_type}</span></td>
+                    <td><span class="badge ${priorityClass}">${item.priority_level || 'normal'}</span></td>
+                    <td class="small">${item.created_at ? new Date(item.created_at).toLocaleDateString('ar-SA') : '---'}</td>
+                    <td><i class="fas ${readIcon} ${readClass}"></i></td>
                 </tr>
                 `;
             });
-            $('#history-table-body').html(html || '<tr><td colspan="5" class="text-center py-4">لا توجد تنبيهات سابقة</td></tr>');
+            
+            $('#history-table-body').html(html);
+            
+            // إضافة حدث النقر
+            $('.notification-item').click(function() {
+                const id = $(this).data('id');
+                const notification = data.find(n => n.notification_id === id);
+                if (notification) {
+                    showNotificationDetails(notification);
+                }
+            });
+        }
+
+        function showNotificationDetails(n) {
+            const typeMap = {
+                'urgent_alert': 'طوارئ',
+                'system_update': 'تحدث نظام',
+                'message_from_admin': 'رسالة إدارية'
+            };
+            
+            const priorityMap = {
+                'urgent': 'عاجل جداً',
+                'high': 'مرتفع',
+                'normal': 'عادي',
+                'low': 'منخفض'
+            };
+            
+            $('#detail-type-badge').text(typeMap[n.notification_type] || n.notification_type);
+            $('#detail-priority-badge').text(priorityMap[n.priority_level] || n.priority_level)
+                .removeClass('bg-danger bg-warning bg-primary bg-secondary')
+                .addClass(n.priority_level === 'urgent' ? 'bg-danger' : (n.priority_level === 'high' ? 'bg-warning' : 'bg-primary'));
+            
+            $('#detail-date').text(new Date(n.created_at).toLocaleString('ar-SA'));
+            $('#detail-main-title').text(n.title);
+            $('#detail-message').text(n.message);
+            
+            if (n.action_required && n.action_url) {
+                $('#detail-action-link').attr('href', n.action_url).text(n.action_text || 'عرض');
+                $('#detail-action-container').show();
+            } else {
+                $('#detail-action-container').hide();
+            }
+            
+            const modal = new bootstrap.Modal(document.getElementById('notificationDetailModal'));
+            modal.show();
         }
 
         $('#broadcast-form').on('submit', function (e) {
             e.preventDefault();
+            
             const formData = {
                 notification_type: $('#n-type').val(),
                 priority_level: $('input[name="priority_level"]:checked').val(),
-                title: $('input[name="title"]').val(),
-                message: $('textarea[name="message"]').val(),
-                action_required: $('input[name="action_url"]').val() !== '',
-                action_url: $('input[name="action_url"]').val(),
-                action_text: $('input[name="action_text"]').val(),
-                expiry_days: 7
+                title: $('input[name="title"]').val().trim(),
+                message: $('textarea[name="message"]').val().trim(),
+                action_required: $('#action-required-checkbox').is(':checked'),
+                action_url: $('input[name="action_url"]').val().trim(),
+                action_text: $('input[name="action_text"]').val().trim(),
+                expiry_days: parseInt($('input[name="expiry_days"]').val()) || 7
             };
 
+            // التحقق من المدخلات
+            if (!formData.title) {
+                alert('يرجى إدخال عنوان الإشعار');
+                return;
+            }
+            if (!formData.message) {
+                alert('يرجى إدخال نص الرسالة');
+                return;
+            }
+
             if (!confirm('هل أنت متأكد من بث هذا الإشعار لجميع المستخدمين؟')) return;
+
+            // تعطيل الزر أثناء الإرسال
+            const submitBtn = $(this).find('button[type="submit"]');
+            const originalText = submitBtn.html();
+            submitBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-2"></i> جاري الإرسال...');
 
             $.ajax({
                 url: '/api/notifications/admin/notifications/',
@@ -216,17 +357,33 @@
                 contentType: 'application/json',
                 headers: { 'X-CSRFToken': '{{ csrf_token }}' },
                 success: function (res) {
-                    alert('تم بث الإشعار بنجاح لـ ' + res.count + ' مستخدم');
+                    alert(`✅ تم بث الإشعار بنجاح لـ ${res.count || 0} مستخدم`);
                     $('#broadcast-form')[0].reset();
+                    $('#extra-options').hide();
+                    $('#action-required-checkbox').prop('checked', false);
                     loadHistory();
                 },
                 error: function (xhr) {
-                    alert('خطأ في الإرسال: ' + (xhr.responseJSON?.message || 'خطأ غير معروف'));
+                    console.error('Error broadcasting notification:', xhr);
+                    let errorMsg = 'حدث خطأ في الإرسال';
+                    if (xhr.responseJSON) {
+                        if (xhr.responseJSON.detail) errorMsg = xhr.responseJSON.detail;
+                        else if (xhr.responseJSON.message) errorMsg = xhr.responseJSON.message;
+                        else if (xhr.responseJSON.error) errorMsg = xhr.responseJSON.error;
+                    }
+                    alert('❌ ' + errorMsg);
+                },
+                complete: function() {
+                    submitBtn.prop('disabled', false).html(originalText);
                 }
             });
         });
 
+        // تحميل أولي
         loadHistory();
+        
+        // تحديث دوري كل دقيقة
+        setInterval(loadHistory, 60000);
     });
 </script>
 {% endblock %}

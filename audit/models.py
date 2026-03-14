@@ -34,3 +34,14 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.action} - {self.timestamp}"
+
+    class Meta:
+        verbose_name = 'سجل العمليات'
+        verbose_name_plural = 'سجلات العمليات'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['-timestamp']),  # للترتيب
+            models.Index(fields=['user', '-timestamp']),  # لبحث سجل مستخدم معين
+            models.Index(fields=['resource_type', 'resource_id']),  # لبحث سجل مورد معين
+            models.Index(fields=['action', '-timestamp']),  # لبحث نوع العملية
+        ]

@@ -9,10 +9,12 @@ from django.utils import timezone
 from datetime import timedelta
 from django.db import connection
 
-from .models import Notification
+from django.utils.translation import gettext_lazy as _
+from .models import Notification, NotificationPreference
 from .serializers import (
     NotificationSerializer, NotificationCreateSerializer,
-    NotificationStatsSerializer, MarkAsReadSerializer
+    NotificationStatsSerializer, MarkAsReadSerializer,
+    NotificationPreferenceSerializer
 )
 from .services import NotificationService
 
@@ -203,24 +205,26 @@ class NotificationPreferencesView(APIView):
     """تفضيلات الإشعارات للمستخدم"""
     permission_classes = [IsAuthenticated]
 
+    def get_preferences(self, user):
+        """الحصول على التفضيلات أو إنشاء واحدة افتراضية"""
+        prefs, created = NotificationPreference.objects.get_or_create(user=user)
+        return prefs
+
     def get(self, request):
-        user = request.user
-        # إرجاع تفضيلات الإشعارات المتاحة وحالتها الافتراضية
-        available_types = [
-            {'type': t[0], 'label': str(t[1]), 'enabled': True}
-            for t in Notification.NOTIFICATION_TYPES
-        ]
-        return Response({
-            'user': user.phone if hasattr(user, 'phone') else str(user),
-            'notification_types': available_types,
-            'receive_email': True,
-            'receive_push': True,
-        })
+        prefs = self.get_preferences(request.user)
+        serializer = NotificationPreferenceSerializer(prefs)
+        return Response(serializer.data)
 
     def put(self, request):
         """تحديث تفضيلات الإشعارات"""
-        # يمكن توسيعه لاحقاً بربطه بجدول تفضيلات حقيقي
-        return Response({
-            'message': 'تم تحديث تفضيلات الإشعارات',
-            'updated': request.data
-        })
+        prefs = self.get_preferences(request.user)
+        serializer = NotificationPreferenceSerializer(prefs, data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response({
+                'message': _('تم تحديث تفضيلات الإشعارات بنجاح'),
+                'preferences': serializer.data
+            })
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
