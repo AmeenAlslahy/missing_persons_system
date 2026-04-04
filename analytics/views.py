@@ -8,6 +8,8 @@ from django.db.models import Q, Count
 from django.utils import timezone
 from datetime import timedelta
 import logging
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 from .models import DailyStats, PerformanceMetric, AnalyticsReport, DashboardWidget
 from .serializers import (
@@ -43,10 +45,21 @@ class DailyStatsViewSet(viewsets.ReadOnlyModelViewSet):
         
         return queryset
     
-    @action(detail=False, methods=['post'])
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter('start_date', openapi.IN_QUERY, description="تاريخ البدء (YYYY-MM-DD)", type=openapi.TYPE_STRING, format='date', required=True),
+            openapi.Parameter('end_date', openapi.IN_QUERY, description="تاريخ الانتهاء (YYYY-MM-DD)", type=openapi.TYPE_STRING, format='date', required=True),
+        ],
+        responses={
+            200: DailyStatsSerializer(many=True),
+            400: 'Bad Request - Invalid date format',
+            401: 'Unauthorized'
+        }
+    )
+    @action(detail=False, methods=['get'])
     def date_range(self, request):
         """الحصول على إحصائيات لفترة محددة"""
-        serializer = DateRangeSerializer(data=request.data)
+        serializer = DateRangeSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
         
         data = serializer.validated_data
@@ -357,6 +370,7 @@ class DashboardView(APIView):
                 'pending_review_reports': dashboard_stats.get('reports', {}).get('pending', 0),
                 'resolved_reports': dashboard_stats.get('reports', {}).get('resolved', 0),
                 'total_matches': dashboard_stats.get('matching', {}).get('total_matches', 0),
+                'reports_by_age_group': dashboard_stats.get('reports_by_age_group', {}),
             })
 
             # إضافة بيانات المناطق الجغرافية (مخزنة في كاش)

@@ -360,3 +360,41 @@ class UserAdminSerializer(serializers.ModelSerializer):
     def get_reports_count(self, obj):
         from reports.models import Report
         return Report.objects.filter(user=obj).count()
+
+class UserMinimalSerializer(serializers.ModelSerializer):
+    """سرياليزر مبسط للمستخدم للاستجابات"""
+    user_type_display = serializers.SerializerMethodField()
+    is_admin = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = User
+        fields = ['id', 'phone', 'first_name', 'last_name', 'user_type', 'user_type_display', 'is_admin']
+        ref_name = 'AccountsUserMinimal'
+
+    def get_user_type_display(self, obj):
+        return obj.get_user_type_display()
+
+class LoginResponseSerializer(serializers.Serializer):
+    """سرياليزر لتوثيق رد تسجيل الدخول (لأغراض Swagger)"""
+    access = serializers.CharField()
+    refresh = serializers.CharField()
+    user = UserMinimalSerializer()
+    message = serializers.CharField()
+
+class RegistrationResponseSerializer(serializers.Serializer):
+    """سرياليزر لتوثيق رد تسجيل حساب جديد (لأغراض Swagger)"""
+    id = serializers.IntegerField()
+    phone = serializers.CharField()
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    access = serializers.CharField()
+    refresh = serializers.CharField()
+    message = serializers.CharField(default="User created successfully")
+
+class OTPSendSerializer(serializers.Serializer):
+    """سرياليزر طلب OTP"""
+    phone = serializers.CharField(required=True, help_text=_("رقم الهاتف"))
+
+class OTPVerifySerializer(serializers.Serializer):
+    """سرياليزر التحقق من OTP"""
+    otp = serializers.CharField(required=True, max_length=6)

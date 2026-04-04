@@ -33,3 +33,19 @@ Desktop.ini
 *.h5
 models/
 matching/ml_models/
+
+# Scratch and Temporary Files
+tmp_*.py
+test_*.py
+verify_*.py
+*.ipynb
+*.txt
+list_users.py
+reset_pwd*.py
+scripts/trigger_*.py
+scripts/migrate_*.py
+scripts/generate_*.py
+scripts/download_*.py
+ai/
+admin_dashboard/
+INSTALLATION.md

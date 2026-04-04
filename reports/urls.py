@@ -8,7 +8,6 @@ router.register(r'reports', views.ReportViewSet, basename='report')
 urlpatterns = [
     path('', include(router.urls)),
     path('statistics/', views.ReportStatisticsView.as_view(), name='report-statistics'),
-    path('stats/', views.ReportStatisticsView.as_view(), name='report-stats'),  # alias
     path('search-persons/', views.SearchPersonsView.as_view(), name='search-persons'),
-    path('persons/<uuid:person_id>/report/', views.CreateReportFromPersonView.as_view(), name='create-report-from-person'),
+    path('search-persons-with-reports/', views.SearchPersonsWithReportsView.as_view(), name='search-persons-with-reports'),
 ]

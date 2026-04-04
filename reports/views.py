@@ -10,6 +10,8 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from datetime import date
 import logging
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 from .models import Report, Person
 from .serializers import (
@@ -18,9 +20,9 @@ from .serializers import (
     ReportSearchSerializer, PersonSearchSerializer, 
     ReportFromExistingPersonSerializer
 )
-from .permissions import IsOwnerOrReadOnly, IsVerifiedUser
 from .utils import apply_age_filter, obfuscate_phone
 from audit.services import AuditService
+from utils.serializers import ErrorResponseSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,29 @@ class ReportViewSet(viewsets.ModelViewSet):
     ).prefetch_related(
         'images'
     ).all()
+    
+    @swagger_auto_schema(
+        responses={
+            401: 'Unauthorized',
+            403: 'Forbidden',
+            404: openapi.Response(
+                'البلاغ غير موجود',
+                examples={
+                    'application/json': {
+                        'success': False,
+                        'error_code': 'NOTFOUND_003',
+                        'message': 'البلاغ غير موجود',
+                        'message_en': 'Report not found',
+                        'details': None,
+                        'timestamp': '2026-04-04T12:00:00Z'
+                    }
+                }
+            ),
+            500: 'Internal Server Error'
+        }
+    )
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
     
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['report_type', 'status', 'lost_governorate', 'importance']
@@ -55,7 +80,7 @@ class ReportViewSet(viewsets.ModelViewSet):
         if self.action in ['list', 'retrieve']:
             permission_classes = [AllowAny]
         elif self.action == 'create':
-            permission_classes = [IsAuthenticated, IsVerifiedUser]
+            permission_classes = [IsAuthenticated]
         elif self.action in ['update', 'partial_update', 'destroy']:
             permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
         elif self.action in ['review', 'escalate']:
@@ -122,11 +147,56 @@ class ReportViewSet(viewsets.ModelViewSet):
 
         return queryset
 
+    @swagger_auto_schema(
+        request_body=ReportCreateSerializer,
+        responses={
+            201: openapi.Response('تم إنشاء البلاغ بنجاح', ReportPublicSerializer),
+            400: openapi.Response(
+                'بلاغ مكرر أو بيانات غير صالحة',
+                examples={
+                    'application/json': {
+                        'success': False,
+                        'error_code': 'REPORT_001',
+                        'message': 'يوجد بلاغ نشط لهذا الشخص بالفعل',
+                        'message_en': 'Active report already exists for this person',
+                        'details': {
+                            'existing_report_id': '550e8400-e29b-41d4-a716-446655440000',
+                            'existing_report_status': 'active'
+                        },
+                        'timestamp': '2026-04-04T12:00:00Z'
+                    }
+                }
+            )
+        }
+    )
     def create(self, request, *args, **kwargs):
-        """إنشاء بلاغ جديد"""
+        """إنشاء بلاغ جديد مع تحديث التطابقات المرتبطة"""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        report = serializer.save()
+        
+        # DRF pattern: call perform_create
+        report = self.perform_create(serializer)
+        
+        # الحصول على معرف البلاغ المرتبط إن وجد
+        related_report_id = request.data.get('related_match_id')
+        
+        # إذا اختار المستخدم ربط هذا البلاغ ببلاغ سابق
+        if related_report_id:
+            try:
+                related_report = Report.objects.get(pk=related_report_id)
+                
+                # إجراء المطابقة بين البلاغين وتسجيل النتيجة عبر الخدمة المركزية
+                from matching.services import link_and_match_two_reports
+                
+                if report.report_type == 'missing':
+                    match, similarity = link_and_match_two_reports(report, related_report)
+                else:
+                    match, similarity = link_and_match_two_reports(related_report, report)
+                    
+                if match:
+                    logger.info(f"Created pending match between {report.report_code} and {related_report.report_code} with score {similarity}.")
+            except Exception as e:
+                logger.error(f"Error relating report {related_report_id} to new report: {e}")
         
         # تسجيل العملية
         AuditService.log_action(
@@ -151,12 +221,65 @@ class ReportViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         """إنشاء بلاغ جديد مع إضافة المستخدم وتحديد الحالة"""
-        status = 'pending'
-        if self.request.user.is_staff:
-            status = 'active'
-        serializer.save(user=self.request.user, status=status)
+        request = self.request
+        last_seen_date = serializer.validated_data.get('last_seen_date')
+        user = request.user
+        
+        # تحديد حالة البلاغ
+        report_status = 'pending'
+        
+        if user.is_staff:
+            # المشرفين - البلاغ نشط مباشرة
+            report_status = 'active'
+        else:
+            # المستخدم العادي
+            today = date.today()
+            if last_seen_date:
+                # إذا كان تاريخ الفقدان/العثور هو نفس اليوم
+                if last_seen_date == today:
+                    report_status = 'active'
+                # إذا كان أقدم بيوم أو أكثر -> يحتاج موافقة
+                elif last_seen_date < today:
+                    report_status = 'pending'
+        
+        # حفظ البلاغ
+        report = serializer.save(user=user, status=report_status)
+        
+        # تشغيل المطابقة التلقائية (إذا كان البلاغ نشطاً)
+        if report_status == 'active':
+            self._run_matching(report)
+            
+        return report
+
+    def _run_matching(self, report):
+        """تشغيل المطابقة التلقائية في الخلفية"""
+        try:
+            from matching.services import run_matching_async
+            run_matching_async(report.report_id, delay=3)
+            logger.info(f"Delayed matching scheduled for report {report.report_code}")
+        except Exception as e:
+            logger.error(f"Error scheduling matching for report {report.report_code}: {e}", exc_info=True)
     
     @action(detail=True, methods=['post'])
+    @swagger_auto_schema(
+        request_body=ReportReviewSerializer,
+        responses={
+            200: openapi.Response('تمت مراجعة البلاغ بنجاح'),
+            403: openapi.Response(
+                'ممنوع - صلاحيات غير كافية',
+                examples={
+                    'application/json': {
+                        'success': False,
+                        'error_code': 'AUTH_002',
+                        'message': 'يجب أن يكون المستخدم مسجلاً كمشرف',
+                        'message_en': 'Insufficient permissions, admin access required',
+                        'details': None,
+                        'timestamp': '2026-04-04T12:00:00Z'
+                    }
+                }
+            )
+        }
+    )
     def review(self, request, pk=None):
         """مراجعة البلاغ من قبل المشرف"""
         try:
@@ -429,6 +552,11 @@ class SearchPersonsView(APIView):
     """البحث عن أشخاص مشابهين بالاسم"""
     permission_classes = [IsAuthenticated]
     
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter('q', openapi.IN_QUERY, description="البحث بالاسم", type=openapi.TYPE_STRING)
+        ]
+    )
     def get(self, request):
         query = request.query_params.get('q', '').strip()
         if len(query) < 2:
@@ -450,52 +578,82 @@ class SearchPersonsView(APIView):
         return Response({'results': serializer.data})
 
 
-class CreateReportFromPersonView(APIView):
-    """إنشاء بلاغ جديد لشخص موجود"""
-    permission_classes = [IsAuthenticated, IsVerifiedUser]
+class SearchPersonsWithReportsView(APIView):
+    """
+    البحث عن أشخاص مشابهين مع عرض البلاغات النشطة المرتبطة بهم
+    """
+    permission_classes = [IsAuthenticated]
     
-    def post(self, request, person_id):
-        try:
-            person = Person.objects.get(pk=person_id)
-        except Person.DoesNotExist:
-            return Response(
-                {'error': _('الشخص غير موجود')},
-                status=status.HTTP_404_NOT_FOUND  # ✅ تم تصحيح الخطأ
-            )
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter('q', openapi.IN_QUERY, description="البحث بالاسم", type=openapi.TYPE_STRING)
+        ]
+    )
+    def get(self, request):
+        query = request.query_params.get('q', '').strip()
+        if len(query) < 2:
+            return Response({'results': []})
         
-        serializer = ReportFromExistingPersonSerializer(
-            data=request.data,
-            context={'request': request, 'person': person}
-        )
+        # البحث عن الأشخاص بالاسم
+        persons = Person.objects.filter(
+            Q(first_name__icontains=query) |
+            Q(middle_name__icontains=query) |
+            Q(last_name__icontains=query)
+        ).prefetch_related('reports', 'reports__images')[:10]
         
-        if serializer.is_valid():
-            report = serializer.save()
+        results = []
+        for person in persons:
+            # الحصول على البلاغات النشطة لهذا الشخص
+            active_reports = person.reports.filter(status__in=['active', 'pending'])
             
-            # تسجيل العملية
-            AuditService.log_action(
-                user=request.user,
-                action='CREATE',
-                resource_type='Report',
-                resource_id=str(report.report_id),
-                request=request
-            )
+            # الحصول على صورة الشخص من أحدث بلاغ
+            all_reports = list(person.reports.all())
+            latest_report = all_reports[0] if all_reports else None
+            person_photo = self._get_primary_photo(latest_report, request) if latest_report else None
             
-            # تشغيل المطابقة التلقائية (غير متزامن)
-            try:
-                from matching.tasks import run_matching_for_report
-                run_matching_for_report.delay(str(report.report_id))
-                matches_count = _("سيتم تشغيل المطابقة قريباً")
-            except Exception as e:
-                logger.error(f"Error scheduling matching for report {report.report_code}: {e}")
-                matches_count = 0
-            
-            response_serializer = ReportPublicSerializer(
-                report, 
-                context={'request': request}
-            )
-            response_data = response_serializer.data
-            response_data['matches_found'] = matches_count
-            
-            return Response(response_data, status=status.HTTP_201_CREATED)
+            results.append({
+                'person_id': str(person.person_id),
+                'full_name': person.full_name,
+                'first_name': person.first_name,
+                'middle_name': person.middle_name,
+                'last_name': person.last_name,
+                'gender': person.gender,
+                'gender_display': person.get_gender_display(),
+                'date_of_birth': person.date_of_birth,
+                'age': person.age,
+                'home_governorate': person.home_governorate_id,
+                'home_governorate_name': person.home_governorate.name_ar if person.home_governorate else None,
+                'home_district': person.home_district_id,
+                'home_district_name': person.home_district.name_ar if person.home_district else None,
+                'home_uzlah': person.home_uzlah_id,
+                'home_uzlah_name': person.home_uzlah.name_ar if person.home_uzlah else None,
+                'primary_photo': person_photo,
+                'active_reports': [
+                    {
+                        'report_id': str(r.report_id),
+                        'report_code': r.report_code,
+                        'report_type': r.report_type,
+                        'report_type_display': r.get_report_type_display(),
+                        'status': r.status,
+                        'last_seen_date': r.last_seen_date,
+                        'lost_governorate_name': r.lost_governorate.name_ar if r.lost_governorate else None,
+                        'primary_photo': self._get_primary_photo(r, request),
+                    }
+                    for r in active_reports
+                ]
+            })
         
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'results': results})
+    
+    def _get_primary_photo(self, report, request):
+        first_image = report.images.first()
+        if first_image and first_image.image_path:
+            if request:
+                try:
+                    return request.build_absolute_uri(first_image.image_path.url)
+                except Exception:
+                    pass
+            return getattr(first_image.image_path, 'url', None)
+        return None
+
+

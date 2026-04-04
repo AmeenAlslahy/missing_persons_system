@@ -14,20 +14,25 @@ from datetime import timedelta
 from django.core.cache import cache
 from django.conf import settings
 from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 import logging
 
 from .models import User
 from .serializers import (
     UserRegistrationSerializer, UserLoginSerializer,
     UserProfileSerializer, UserUpdateSerializer,
-    PasswordChangeSerializer, UserAdminSerializer
+    PasswordChangeSerializer, UserAdminSerializer,
+    LoginResponseSerializer, RegistrationResponseSerializer,
+    OTPSendSerializer, OTPVerifySerializer
 )
+from utils.serializers import ErrorResponseSerializer
 
 logger = logging.getLogger(__name__)
 
 # Rate limiter مخصص لـ OTP
 class OTPRateThrottle(UserRateThrottle):
-    rate = '3/hour'  # 3 محاولات في الساعة
+    scope = 'otp_send'
 
 
 class UserRegistrationView(generics.CreateAPIView):
@@ -36,7 +41,39 @@ class UserRegistrationView(generics.CreateAPIView):
     permission_classes = [permissions.AllowAny]
     throttle_classes = [AnonRateThrottle]
 
-    def create(self, request, *args, **kwargs):
+    @swagger_auto_schema(
+        request_body=UserRegistrationSerializer,
+        responses={
+            201: openapi.Response('تم إنشاء الحساب بنجاح', RegistrationResponseSerializer),
+            400: openapi.Response(
+                'طلب غير صالح (هاتف مستخدم أو غير متطابق)',
+                examples={
+                    'application/json': {
+                        'success': False,
+                        'error_code': 'REG_001',
+                        'message': 'رقم الهاتف مستخدم بالفعل',
+                        'message_en': 'Phone number already registered',
+                        'details': {'phone': ['هذا الرقم مسجل مسبقاً']},
+                        'timestamp': '2026-04-04T12:00:00Z'
+                    }
+                }
+            ),
+            500: openapi.Response(
+                'خطأ داخلي في الخادم',
+                examples={
+                    'application/json': {
+                        'success': False,
+                        'error_code': 'SERVER_001',
+                        'message': 'حدث خطأ داخلي في الخادم، الرجاء المحاولة لاحقاً',
+                        'message_en': 'Internal server error, please try again later',
+                        'details': None,
+                        'timestamp': '2026-04-04T12:00:00Z'
+                    }
+                }
+            )
+        }
+    )
+    def post(self, request, *args, **kwargs):
         try:
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
@@ -66,6 +103,51 @@ class UserLoginView(TokenObtainPairView):
     serializer_class = UserLoginSerializer
     throttle_classes = [AnonRateThrottle]
 
+    @swagger_auto_schema(
+        responses={
+            200: openapi.Response('تم تسجيل الدخول بنجاح', LoginResponseSerializer),
+            400: openapi.Response(
+                'طلب غير صالح',
+                examples={
+                    'application/json': {
+                        'success': False,
+                        'error_code': 'VALIDATION_001',
+                        'message': 'رقم الهاتف وكلمة المرور مطلوبان',
+                        'message_en': 'Phone and password are required',
+                        'details': {'phone': ['This field is required']},
+                        'timestamp': '2026-04-04T12:00:00Z'
+                    }
+                }
+            ),
+            401: openapi.Response(
+                'بيانات الدخول غير صحيحة',
+                examples={
+                    'application/json': {
+                        'success': False,
+                        'error_code': 'AUTH_001',
+                        'message': 'رقم الهاتف أو كلمة المرور غير صحيحة',
+                        'message_en': 'Invalid phone or password',
+                        'remaining_attempts': 2,
+                        'timestamp': '2026-04-04T12:00:00Z'
+                    }
+                }
+            ),
+            429: openapi.Response(
+                'طلبات كثيرة',
+                examples={
+                    'application/json': {
+                        'success': False,
+                        'error_code': 'RATE_001',
+                        'message': 'عدد محاولات الدخول كبير جداً',
+                        'message_en': 'Too many login attempts',
+                        'retry_after_seconds': 900,
+                        'timestamp': '2026-04-04T12:00:00Z'
+                    }
+                }
+            ),
+            500: openapi.Response('internal server error')
+        }
+    )
     def post(self, request, *args, **kwargs):
         try:
             serializer = self.get_serializer(data=request.data)
@@ -141,13 +223,7 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
         })
 
 
-class UserUpdateView(generics.UpdateAPIView):
-    """تحديث بيانات المستخدم"""
-    serializer_class = UserUpdateSerializer
-    permission_classes = [permissions.IsAuthenticated]
 
-    def get_object(self):
-        return self.request.user
 
 
 class PasswordChangeView(APIView):
@@ -203,7 +279,34 @@ class VerificationRequestView(APIView):
 
 
 class UserViewSet(viewsets.ModelViewSet):
-    """ViewSet للمستخدمين (للمشرفين)"""
+    """
+    ViewSet للمستخدمين (للمشرفين)
+    
+    ملاحظة هامة: يجب أن يكون المستخدم مسجلاً كمشرف لعرض بيانات وموارد المستخدمين.
+    حقل كلمة المرور (password) المعروض ضمن بيانات الرد هو النسخة المشفرة (Hash) فقط ولا يمكن فك تشفيره.
+    """
+    @swagger_auto_schema(
+        responses={
+            401: 'Unauthorized',
+            403: 'Forbidden',
+            404: openapi.Response(
+                'المستخدم غير موجود',
+                examples={
+                    'application/json': {
+                        'success': False,
+                        'error_code': 'NOTFOUND_001',
+                        'message': 'المستخدم غير موجود',
+                        'message_en': 'User not found',
+                        'details': None,
+                        'timestamp': '2026-04-04T12:00:00Z'
+                    }
+                }
+            ),
+            500: 'Internal Server Error'
+        }
+    )
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
     queryset = User.objects.all().order_by('-date_joined')
     serializer_class = UserAdminSerializer
     permission_classes = [permissions.IsAdminUser]
@@ -217,9 +320,9 @@ class UserViewSet(viewsets.ModelViewSet):
         context['request'] = self.request
         return context
     
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['patch'])
     def verify_user(self, request, pk=None):
-        """توثيق هوية المستخدم (للمشرفين)"""
+        """توثيق هوية المستخدم (خاص بالمشرفين فقط Admin Only)"""
         user = self.get_object()
         user.verification_status = 'verified'
         user.trust_score = min(user.trust_score + 10, 100)  # زيادة درجة الثقة
@@ -232,9 +335,9 @@ class UserViewSet(viewsets.ModelViewSet):
             'verification_status': user.verification_status
         })
     
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['patch'])
     def deactivate_user(self, request, pk=None):
-        """تعطيل حساب المستخدم (للمشرفين)"""
+        """تعطيل حساب المستخدم (خاص بالمشرفين فقط Admin Only)"""
         user = self.get_object()
         user.is_active = False
         user.save()
@@ -251,6 +354,38 @@ class SendOTPView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     throttle_classes = [OTPRateThrottle]
 
+    @swagger_auto_schema(
+        request_body=OTPSendSerializer(),
+        responses={
+            200: openapi.Response('تم إرسال رمز التحقق بنجاح'),
+            400: openapi.Response(
+                'طلب غير صالح',
+                examples={
+                    'application/json': {
+                        'success': False,
+                        'error_code': 'VALIDATION_001',
+                        'message': 'رقم الهاتف مطلوب',
+                        'message_en': 'Phone number is required',
+                        'details': {'phone': ['This field is required']},
+                        'timestamp': '2026-04-04T12:00:00Z'
+                    }
+                }
+            ),
+            429: openapi.Response(
+                'طلبات كثيرة جداً',
+                examples={
+                    'application/json': {
+                        'success': False,
+                        'error_code': 'OTP_003',
+                        'message': 'لقد تجاوزت الحد المسموح لطلبات OTP. الرجاء المحاولة بعد ساعة',
+                        'message_en': 'Too many OTP requests. Please try again later',
+                        'retry_after_seconds': 3600,
+                        'timestamp': '2026-04-04T12:00:00Z'
+                    }
+                }
+            )
+        }
+    )
     def post(self, request):
         user = request.user
         
@@ -296,6 +431,26 @@ class VerifyOTPView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     throttle_classes = [UserRateThrottle]
 
+    @swagger_auto_schema(
+        request_body=OTPVerifySerializer(),
+        responses={
+            200: openapi.Response('تم التحقق من الرمز بنجاح'),
+            400: openapi.Response(
+                'رمز غير صحيح أو منتهي الصلاحية',
+                examples={
+                    'application/json': {
+                        'success': False,
+                        'error_code': 'OTP_001',
+                        'message': 'رمز التحقق غير صحيح أو منتهي الصلاحية',
+                        'message_en': 'Invalid or expired OTP code',
+                        'details': None,
+                        'remaining_attempts': 2,
+                        'timestamp': '2026-04-04T12:00:00Z'
+                    }
+                }
+            )
+        }
+    )
     def post(self, request):
         user = request.user
         otp_provided = request.data.get('otp')

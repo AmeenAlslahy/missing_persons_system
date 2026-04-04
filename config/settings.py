@@ -60,6 +60,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'analytics.middleware.AnalyticsMiddleware',
     'audit.middleware.AuditLogMiddleware',
+    'utils.middleware.ErrorLoggingMiddleware',
 ]
 
 ANALYTICS_SETTINGS = {
@@ -186,14 +187,15 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.UserRateThrottle'
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '20/minute',        # 20 طلب في الدقيقة للزوار
-        'user': '100/minute',       # 100 طلب في الدقيقة للمستخدمين العاديين
+        'anon': '100/day',          # 100 طلب في اليوم للاستخدام المجهول
+        'user': '1000/day',         # 1000 طلب في اليوم للمستخدمين
         'staff': '300/minute',      # 300 طلب في الدقيقة للمشرفين
-        'otp': '3/hour',            # 3 محاولات OTP في الساعة
+        'otp_send': '3/hour',       # منع هجمات الـ OTP flooding
         'register': '5/hour',       # 5 محاولات تسجيل في الساعة
-        'login': '10/minute',       # 10 محاولات دخول في الدقيقة
+        'login': '10/minute',       # منع هجمات الـ brute force
         'report_create': '10/hour', # 10 بلاغات في الساعة
-    }
+    },
+    'EXCEPTION_HANDLER': 'utils.exceptions.custom_exception_handler',
 }
 
 # JWT Settings
@@ -209,6 +211,11 @@ SIMPLE_JWT = {
 
 # Custom user model
 AUTH_USER_MODEL = 'accounts.User'
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+]
+
 
 LOGIN_URL = '/admin-dashboard/login/'
 LOGIN_REDIRECT_URL = '/admin-dashboard/'
@@ -298,3 +305,17 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+
+
+FACE_ENGINE = 'inception'  # استخدام النموذج الجديد
+
+# مسار نموذج Inception (إذا كان محلياً)
+INCEPTION_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'best_inception_arcface_v4.pth')
+
+# عتبة التشابه (من نتائج التدريب)
+FACE_SIMILARITY_THRESHOLD = 0.500
+
+# إعدادات Hugging Face
+HF_REPO_ID = "AmeenAlslahy/arcface-missing-persons"
+
+
